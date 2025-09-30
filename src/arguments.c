@@ -8,6 +8,8 @@
 
 bool is_https(const char *url);
 
+bool is_supported_url(const char *url);
+
 Arguments create_default_arguments(void) {
     Arguments arg = {0};
     arg.bench_time = DEFAULT_BENCH_TIME;
@@ -156,14 +158,24 @@ void set_arguments_values(int argc, char *argv[], Arguments *args) {
         exit(EXIT_FAILURE);
     }
 
+    /* Check if the url is a valid one. */
+    if (strlen(argv[optind]) > 1500) {
+        fprintf(stderr, "Invalid url %s: URL is too long.\n", argv[optind]);
+        exit(EXIT_FAILURE);
+    }
+    if (!is_supported_url(argv[optind])) {
+        fprintf(stderr, "Invalid url %s: Only HTTP/HTTPS protocol is supported, set --proxy for others.\n", argv[optind]);
+        exit(EXIT_FAILURE);
+    } 
+
+    /* Set the target url specified in command line. */
+    args->url = argv[optind];
+    
     if (false == validate_arguments(args)) {
         fprintf(stderr, "Illegal command line arguments!\n");
         usage();
         exit(EXIT_FAILURE);
     }
-
-    /* Set the target url specified in command line. */
-    args->url = argv[optind];
 
     // Check the url's protocol part.
     if (is_https(args->url)) {
@@ -196,4 +208,7 @@ bool is_https(const char *url) {
     return strncasecmp("https://", url, 8) == 0;
 }
 
-
+bool is_supported_url(const char *url) {
+    /* The url should contain "http://" or "https://" prefix */
+    return (strncasecmp("http://", url, 7) == 0 || strncasecmp("https://", url, 8) == 0);
+}
