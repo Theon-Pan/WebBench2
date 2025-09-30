@@ -22,22 +22,26 @@ HTTPRequest build_request(Arguments *args) {
         args->http10 = HTTP_VERSION_1_1;
     }
 
+
+    // Construct the first line: add http method.
     switch (args->method) {
         case METHOD_GET:
-            snprintf(request.body, sizeof(request.body), "GET");
+            snprintf(request.body, sizeof(request.body), "GET ");
             break;
         case METHOD_HEAD:
-            snprintf(request.body, sizeof(request.body), "HEAD");
+            snprintf(request.body, sizeof(request.body), "HEAD ");
             break;
         case METHOD_OPTIONS:
-            snprintf(request.body, sizeof(request.body), "OPTIONS");
+            snprintf(request.body, sizeof(request.body), "OPTIONS ");
             break;
         case METHOD_TRACE:
-            snprintf(request.body, sizeof(request.body), "TRACE");
+            snprintf(request.body, sizeof(request.body), "TRACE ");
             break;
         default:
             return NULL;
     }
+
+
 
 
     return request;

@@ -56,7 +56,7 @@ void usage(void);
 /**
  * Validate the arguments parsed from command line.
  */
-bool validate_arguments(Arguments *args);
+bool validate_arguments(const Arguments *args);
 
 
 #endif

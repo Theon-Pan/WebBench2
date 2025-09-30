@@ -6,6 +6,8 @@
 #include <string.h>
 #include <stdbool.h>
 
+bool is_https(const char *url);
+
 Arguments create_default_arguments(void) {
     Arguments arg = {0};
     arg.bench_time = DEFAULT_BENCH_TIME;
@@ -163,6 +165,11 @@ void set_arguments_values(int argc, char *argv[], Arguments *args) {
     /* Set the target url specified in command line. */
     args->url = argv[optind];
 
+    // Check the url's protocol part.
+    if (is_https(args->url)) {
+        args->protocol = PROTOCOL_HTTPS;
+    }
+
 }
 
 void usage(void) {
@@ -183,6 +190,10 @@ void usage(void) {
         "  -?|-h|--help             This information.\n"
         "  -V|--version             Display program version.\n"
     );
+}
+
+bool is_https(const char *url) {
+    return strncasecmp("https://", url, 8) == 0;
 }
 
 
