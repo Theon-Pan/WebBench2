@@ -18,9 +18,11 @@
 #define DEFAULT_FORCE_RELOAD 0
 #define DEFAULT_PROXY_PORT 80
 #define DEFAULT_TARGET_PORT 80
+#define DEFAULT_TARGET_SECURITY_PORT 443
 #define DEFAULT_BENCH_TIME 30
 
 #define HOSTNAMELEN  128
+#define MAX_URL_LEN 128
 
 
 typedef struct {
@@ -35,7 +37,7 @@ typedef struct {
     int protocol;                   // HTTP or HTTPS.
     int http10;                     /* 0 - http/0.9; 1 - http/1.0; 2 - http/1.1 */
     int method;                     /* 0 - GET; 1 - HEAD; 2 - OPTIONS; 3 - TRACE */
-    char *url;                      /* Target URL.*/
+    char url[MAX_URL_LEN];          /* Target URL.*/
 } Arguments;
 
 /**

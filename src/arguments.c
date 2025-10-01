@@ -10,6 +10,8 @@ bool is_https(const char *url);
 
 bool is_supported_url(const char *url);
 
+int set_arguments_from_url(Arguments *args);
+
 Arguments create_default_arguments(void) {
     Arguments arg = {0};
     arg.bench_time = DEFAULT_BENCH_TIME;
@@ -20,7 +22,6 @@ Arguments create_default_arguments(void) {
     arg.protocol = PROTOCOL_HTTP;
     arg.proxy_port = DEFAULT_PROXY_PORT;
     arg.target_port = DEFAULT_TARGET_PORT;
-    arg.url = NULL;
     return arg;
 }
 
@@ -169,7 +170,15 @@ void set_arguments_values(int argc, char *argv[], Arguments *args) {
     } 
 
     /* Set the target url specified in command line. */
-    args->url = argv[optind];
+    snprintf(args->url, sizeof(args->url), "%s", argv[optind]);
+    // If url does not end with '/', then append.
+    if ('/' != argv[optind][strlen(argv[optind]) - 1]) {
+        strncat(args->url, "/", sizeof(args->url) - strlen(args->url) - 1);
+    }
+
+    if (set_arguments_from_url(args) < 0) {
+        exit(EXIT_FAILURE);
+    }
     
     if (false == validate_arguments(args)) {
         fprintf(stderr, "Illegal command line arguments!\n");
@@ -177,11 +186,7 @@ void set_arguments_values(int argc, char *argv[], Arguments *args) {
         exit(EXIT_FAILURE);
     }
 
-    // Check the url's protocol part.
-    if (is_https(args->url)) {
-        args->protocol = PROTOCOL_HTTPS;
-    }
-
+    
 }
 
 void usage(void) {
@@ -211,4 +216,61 @@ bool is_https(const char *url) {
 bool is_supported_url(const char *url) {
     /* The url should contain "http://" or "https://" prefix */
     return (strncasecmp("http://", url, 7) == 0 || strncasecmp("https://", url, 8) == 0);
+}
+
+int set_arguments_from_url(Arguments *args) {
+    int hostname_start_offset = 0;
+    char port_str[10] = {0};
+    char *first_comma_index_in_url, *first_splash_index_in_url;
+    char *endptr = NULL;
+    long t;
+
+    if (0 == strlen(args->url)) {
+        fprintf(stderr, "Invalid url: url is empty or null.\n");
+        return -1;
+    }
+    
+    if ('/' != args->url[strlen(args->url) - 1]) {
+        fprintf(stderr, "Invalid url %s: url does not end with '/'.\n", args->url);
+        return -1;
+    }
+
+    // Check the url's protocol part.
+    if (is_https(args->url)) {
+        args->protocol = PROTOCOL_HTTPS;
+        args->target_port = DEFAULT_TARGET_SECURITY_PORT;
+    }
+
+    hostname_start_offset = strstr(args->url,"://") - args->url + 3;
+    
+    /* Get target host and port from url. */
+    first_comma_index_in_url = strchr(args->url + hostname_start_offset, ':');
+    first_splash_index_in_url = strchr(args->url + hostname_start_offset, '/');
+    if (NULL != first_comma_index_in_url && NULL != first_splash_index_in_url 
+        && (first_comma_index_in_url < first_splash_index_in_url)) {
+        // It means there's target port number specified, we need to parse and get it.
+        // Parse and get hostname first.
+        strncpy(args->target_host, 
+            args->url + hostname_start_offset, 
+            first_comma_index_in_url - args->url - hostname_start_offset);
+        
+        // Then parse and get target port number
+        strncpy(port_str, 
+            first_comma_index_in_url + 1, 
+            first_splash_index_in_url - first_comma_index_in_url - 1);
+        
+        t = strtol(port_str, &endptr, 10);
+        if (errno != 0 || port_str == endptr || t <= 0) {
+            fprintf(stderr, "Invalid port number in url %s.\n", args->url);
+            return -1;
+        }
+        args->target_port = (int) t;
+    }else if (NULL == first_comma_index_in_url) {
+        // It means there's no target port number specified, just parse the host.
+        strncpy(args->target_host,
+            args->url + hostname_start_offset, 
+            first_splash_index_in_url - args->url - hostname_start_offset);
+
+    }
+    return 0;
 }

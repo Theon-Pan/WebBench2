@@ -29,11 +29,14 @@ test_arguments.o: test/test_arguments.c include/arguments.h
 arguments.o: prepare include/arguments.h src/arguments.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c src/arguments.c -o $(TARGET_DIR)arguments.o
 
+request.o: prepare include/request.h src/request.c
+	$(CC) $(CFLAGS) $(INCLUDES) -c src/request.c -o $(TARGET_DIR)request.o
+
 webbench2.o: prepare src/webbench2.c include/arguments.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c src/webbench2.c -o $(TARGET_DIR)webbench2.o
 	@echo "Compiled webbench2.o successfully."
 
-$(TARGET): prepare test_arguments webbench2.o arguments.o
+$(TARGET): prepare test_arguments webbench2.o arguments.o request.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $(TARGET_DIR)$(TARGET) $(TARGET_DIR)webbench2.o $(TARGET_DIR)arguments.o $(TEST_LIBS)
 	@echo "WebBench 2 compiled successfully."
 

@@ -15,8 +15,8 @@ typedef struct {
 /**
  * Build a http request string according the arguments parsed from command line.
  * RETURNS:
- *      a struct HTTPRequest or NULL if there is any illegal arguments.
+ *      Return negative if any error.
  */
-HTTPRequest build_request(Arguments *args);
+int build_request(Arguments *args, HTTPRequest *request);
 
 #endif
