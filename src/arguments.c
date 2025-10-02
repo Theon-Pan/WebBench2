@@ -20,6 +20,7 @@ Arguments create_default_arguments(void) {
     arg.force_reload = DEFAULT_FORCE_RELOAD;
     arg.method = METHOD_GET;
     arg.protocol = PROTOCOL_HTTP;
+    arg.http10 = HTTP_VERSION_1_1;
     arg.proxy_port = DEFAULT_PROXY_PORT;
     arg.target_port = DEFAULT_TARGET_PORT;
     return arg;
@@ -221,7 +222,7 @@ bool is_supported_url(const char *url) {
 int set_arguments_from_url(Arguments *args) {
     int hostname_start_offset = 0;
     char port_str[10] = {0};
-    char *first_comma_index_in_url, *first_splash_index_in_url;
+    char *first_comma_pointer_in_url, *first_splash_pointer_in_url;
     char *endptr = NULL;
     long t;
 
@@ -244,20 +245,20 @@ int set_arguments_from_url(Arguments *args) {
     hostname_start_offset = strstr(args->url,"://") - args->url + 3;
     
     /* Get target host and port from url. */
-    first_comma_index_in_url = strchr(args->url + hostname_start_offset, ':');
-    first_splash_index_in_url = strchr(args->url + hostname_start_offset, '/');
-    if (NULL != first_comma_index_in_url && NULL != first_splash_index_in_url 
-        && (first_comma_index_in_url < first_splash_index_in_url)) {
+    first_comma_pointer_in_url = strchr(args->url + hostname_start_offset, ':');
+    first_splash_pointer_in_url = strchr(args->url + hostname_start_offset, '/');
+    if (NULL != first_comma_pointer_in_url && NULL != first_splash_pointer_in_url 
+        && (first_comma_pointer_in_url < first_splash_pointer_in_url)) {
         // It means there's target port number specified, we need to parse and get it.
         // Parse and get hostname first.
         strncpy(args->target_host, 
             args->url + hostname_start_offset, 
-            first_comma_index_in_url - args->url - hostname_start_offset);
+            first_comma_pointer_in_url - args->url - hostname_start_offset);
         
         // Then parse and get target port number
         strncpy(port_str, 
-            first_comma_index_in_url + 1, 
-            first_splash_index_in_url - first_comma_index_in_url - 1);
+            first_comma_pointer_in_url + 1, 
+            first_splash_pointer_in_url - first_comma_pointer_in_url - 1);
         
         t = strtol(port_str, &endptr, 10);
         if (errno != 0 || port_str == endptr || t <= 0) {
@@ -265,11 +266,11 @@ int set_arguments_from_url(Arguments *args) {
             return -1;
         }
         args->target_port = (int) t;
-    }else if (NULL == first_comma_index_in_url) {
+    }else if (NULL == first_comma_pointer_in_url) {
         // It means there's no target port number specified, just parse the host.
         strncpy(args->target_host,
             args->url + hostname_start_offset, 
-            first_splash_index_in_url - args->url - hostname_start_offset);
+            first_splash_pointer_in_url - args->url - hostname_start_offset);
 
     }
     return 0;

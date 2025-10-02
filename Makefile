@@ -23,8 +23,15 @@ test_arguments: test_arguments.o arguments.o
 	$(CC) $(CFLAGS) $(INCLUDES) -o $(TARGET_TEST_DIR)test_arguments $(TARGET_DIR)arguments.o $(TARGET_TEST_DIR)test_arguments.o $(TEST_LIBS)
 	$(TARGET_TEST_DIR)test_arguments
 
+test_request: test_request.o request.o arguments.o
+	$(CC) $(CFLAGS) $(INCLUDES) -o $(TARGET_TEST_DIR)test_request $(TARGET_DIR)request.o $(TARGET_DIR)arguments.o $(TARGET_TEST_DIR)test_request.o $(TEST_LIBS)
+	$(TARGET_TEST_DIR)test_request
+
 test_arguments.o: test/test_arguments.c include/arguments.h
 	$(CC) $(CFLAGS) $(INCLUDES) -o ${TARGET_TEST_DIR}test_arguments.o -c test/test_arguments.c $(TEST_LIBS)
+
+test_request.o: test/test_request.c include/request.h include/arguments.h
+	$(CC) $(CFLAGS) $(INCLUDES) -o ${TARGET_TEST_DIR}test_request.o -c test/test_request.c ${TEST_LIBS}
 
 arguments.o: prepare include/arguments.h src/arguments.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c src/arguments.c -o $(TARGET_DIR)arguments.o
@@ -36,7 +43,7 @@ webbench2.o: prepare src/webbench2.c include/arguments.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c src/webbench2.c -o $(TARGET_DIR)webbench2.o
 	@echo "Compiled webbench2.o successfully."
 
-$(TARGET): prepare test_arguments webbench2.o arguments.o request.o
+$(TARGET): prepare test_arguments test_request webbench2.o arguments.o request.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $(TARGET_DIR)$(TARGET) $(TARGET_DIR)webbench2.o $(TARGET_DIR)arguments.o $(TEST_LIBS)
 	@echo "WebBench 2 compiled successfully."
 

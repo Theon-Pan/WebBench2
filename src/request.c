@@ -4,8 +4,6 @@
 #include "request.h"
 
 
-void get_hostname(const char *url, char *hostname, size_t hostname_size);
-
 int build_request(Arguments *args, HTTPRequest *request) {
 
     // Clean the request from caller.
@@ -46,20 +44,27 @@ int build_request(Arguments *args, HTTPRequest *request) {
             return -1;
     }
 
-    
-    get_hostname(args->url, request->host, sizeof(request->host));
-
     // Construct the first line of the HTTP request body: append the hostname.
-    // TODO 
-    strncat(request->body, "/", sizeof(request->body) - strlen(request->body) - 1);
-
+    if (0 == strlen(args->proxy_host)) {
+        //If no proxy specified, then the hostname in the first line is '/'.
+        strncat(request->body, "/", sizeof(request->body) - strlen(request->body) - 1);
+    }else{
+        //If proxy is specified, the use url as hostname in the first line.
+        strncat(request->body, args->url, sizeof(request->body) - strlen(request->body) - 1);
+    }
+    
+    
     // Construct the first line of the HTTP request body: append the http protocol version.
     if (HTTP_VERSION_1_0 == args->http10) {
         strncat(request->body, " HTTP/1.0\r\n", sizeof(request->body) - strlen(request->body) - 1);
     }else if (HTTP_VERSION_1_1 == args->http10) {
         strncat(request->body, " HTTP/1.1\r\n", sizeof(request->body) - strlen(request->body) - 1);
     }
+    
+    // End of the first line.
+    strncat(request->body, "\r\n", sizeof(request->body) - strlen(request->body) - 1);
 
+    snprintf(request->host, sizeof(request->host), "%s", args->target_host);
 
     return 0;
 }
