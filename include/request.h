@@ -3,7 +3,7 @@
 
 #include "arguments.h"
 
-#define MAXHOSTNAMELENGTH 64
+#define MAXHOSTNAMELENGTH 128
 #define REQUEST_BODY_SIZE 2048
 
 typedef struct {
