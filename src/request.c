@@ -60,9 +60,6 @@ int build_request(Arguments *args, HTTPRequest *request) {
     }else if (HTTP_VERSION_1_1 == args->http10) {
         strncat(request->body, " HTTP/1.1\r\n", sizeof(request->body) - strlen(request->body) - 1);
     }
-    
-    // End of the first line.
-    strncat(request->body, "\r\n", sizeof(request->body) - strlen(request->body) - 1);
 
     snprintf(request->host, sizeof(request->host), "%s", args->target_host);
 

@@ -7,7 +7,7 @@
 START_TEST(test_construct_request_first_line_no_proxy_specified)
 {
     char *argv[] = {"webbench2", "-t", "10", "-c", "5", "--options", "https://www.baidu.com:12345"};
-    char *expected_request_first_line = "OPTIONS / HTTP/1.1";
+    char *expected_request_first_line = "OPTIONS / HTTP/1.1\r\n";
     int argc = 7;
 
     Arguments args = create_default_arguments();
@@ -19,10 +19,35 @@ START_TEST(test_construct_request_first_line_no_proxy_specified)
     HTTPRequest request = {0};
 
     if (build_request(&args, &request) == 0) {
-        printf("Request: host=%s, body=%s\n", request.host, request.body);
+        printf("Request: host=%s, body=\n%s", request.host, request.body);
     }
+    ck_assert_int_ne(strlen(request.body), 0);
+    ck_assert_int_ne(strlen(request.host), 0);
+    ck_assert_str_eq(request.host, "www.baidu.com");
+    ck_assert_str_eq(request.body, expected_request_first_line);
+}
+
+START_TEST(test_construct_request_first_line_with_proxy_specified)
+{
+    char *argv[] = {"webbench2", "-t", "10", "-c", "5", "--options", "--proxy", "localhost:7891", "https://www.baidu.com:12345"};
+    char *expected_request_first_line = "OPTIONS https://www.baidu.com:12345/ HTTP/1.1\r\n";
+    int argc = 9;
+
+    Arguments args = create_default_arguments();
+    set_arguments_values(argc, argv, &args);
+
+    printf("bench_time=%d, clients=%d, http_method=%d, target_host=%s, target_port=%d, proxy_host=%s, proxy_port=%d.\n",
+        args.bench_time, args.clients, args.method, args.target_host, args.target_port, args.proxy_host, args.proxy_port);
     
-    
+    HTTPRequest request = {0};
+    if (build_request(&args, &request) == 0) {
+        printf("Request: host=%s, body=\n%s", request.host, request.body);
+    }
+
+    ck_assert_int_ne(strlen(request.host), 0);
+    ck_assert_int_ne(strlen(request.body), 0);
+    ck_assert_str_eq(request.host, "www.baidu.com");
+    ck_assert_str_eq(request.body, expected_request_first_line);
 }
 
 Suite *arguments_suite(void)
@@ -32,7 +57,7 @@ Suite *arguments_suite(void)
     s = suite_create("Request");
     tc_core = tcase_create("Core");
     tcase_add_test(tc_core, test_construct_request_first_line_no_proxy_specified);
-
+    tcase_add_test(tc_core, test_construct_request_first_line_with_proxy_specified);
     suite_add_tcase(s, tc_core);
     return s;
 }
