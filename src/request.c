@@ -5,7 +5,8 @@
 
 
 int build_request(Arguments *args, HTTPRequest *request) {
-
+    char port_str[12] = {0};
+    
     // Clean the request from caller.
     memset(request, 0, sizeof(*request));
     /* Adjust the correct http procotol version according to the arguments from command line */
@@ -62,6 +63,39 @@ int build_request(Arguments *args, HTTPRequest *request) {
     }
 
     snprintf(request->host, sizeof(request->host), "%s", args->target_host);
+
+    // For the HTTP version 1.0 and 1.1, add User-Agent to header.
+    if (args->http10 > 0){
+        strncat(request->body, "User-Agent: WebBench 2\r\n", sizeof(request->body) - strlen(request->body) - 1);
+    }
+
+    // If no proxy server assgined, and the HTTP version is 1.0 or 1.1, add 'Host' to header.
+    if (0 == strlen(args->proxy_host) && (HTTP_VERSION_1_0 == args->http10 || HTTP_VERSION_1_1 == args->http10)) {
+        strncat(request->body, "Host: ", sizeof(request->body) - strlen(request->body) - 1);
+        strncat(request->body, args->target_host, sizeof(request->body) - strlen(request->body) - 1);
+        snprintf(port_str, sizeof(port_str), ":%d", args->target_port);
+        strncat(request->body, port_str, sizeof(request->body) - strlen(request->body) - 1);
+        strncat(request->body, "\r\n", sizeof(request->body) - strlen(request->body) - 1);
+    }
+
+    // Set no-cache header if the proxy is specified.
+    if (strlen(args->proxy_host) != 0) {
+        if (HTTP_VERSION_1_0 == args->http10) {
+            strncat(request->body, "Pragma: no-cache\r\n", sizeof(request->body) - strlen(request->body) - 1);
+        }else if (HTTP_VERSION_1_1 == args->http10) {
+            strncat(request->body, "Cache-Control: no-cache\r\n", sizeof(request->body) - strlen(request->body) - 1);
+        }
+    }
+
+    // If the HTTP version is 1.1, set 'Connection: close' to header.
+    if (HTTP_VERSION_1_1 == args->http10) {
+        strncat(request->body, "Connection: close\r\n", sizeof(request->body) - strlen(request->body) - 1);
+    }
+
+    // If the HTTP version is 1.0 or 1.1, add empty line at the end.
+    if (HTTP_VERSION_1_0 == args->http10 || HTTP_VERSION_1_1 == args->http10) {
+        strncat(request->body, "\r\n", sizeof(request->body) - strlen(request->body) - 1);
+    }
 
     return 0;
 }

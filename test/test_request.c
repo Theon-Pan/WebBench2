@@ -7,7 +7,7 @@
 START_TEST(test_construct_request_first_line_no_proxy_specified)
 {
     char *argv[] = {"webbench2", "-t", "10", "-c", "5", "--options", "https://www.baidu.com:12345"};
-    char *expected_request_first_line = "OPTIONS / HTTP/1.1\r\n";
+    char *expected_request_first_line = "OPTIONS / HTTP/1.1\r\nUser-Agent: WebBench 2\r\nHost: www.baidu.com:12345\r\nConnection: close\r\n\r\n";
     int argc = 7;
 
     Arguments args = create_default_arguments();
@@ -24,13 +24,23 @@ START_TEST(test_construct_request_first_line_no_proxy_specified)
     ck_assert_int_ne(strlen(request.body), 0);
     ck_assert_int_ne(strlen(request.host), 0);
     ck_assert_str_eq(request.host, "www.baidu.com");
+    // for (int i = 0; i < (int) strlen(request.body); i++) {
+    //     if (request.body[i] != expected_request_first_line[i]) {
+    //         printf("Differecen at position %d:\n",i);
+    //         return;
+    //     } else {
+    //         //printf("Strins are identical.\n");
+    //     }
+
+    // }
     ck_assert_str_eq(request.body, expected_request_first_line);
+
 }
 
 START_TEST(test_construct_request_first_line_with_proxy_specified)
 {
     char *argv[] = {"webbench2", "-t", "10", "-c", "5", "--options", "--proxy", "localhost:7891", "https://www.baidu.com:12345"};
-    char *expected_request_first_line = "OPTIONS https://www.baidu.com:12345/ HTTP/1.1\r\n";
+    char *expected_request_first_line = "OPTIONS https://www.baidu.com:12345/ HTTP/1.1\r\nUser-Agent: WebBench 2\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n";
     int argc = 9;
 
     Arguments args = create_default_arguments();
