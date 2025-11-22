@@ -14,11 +14,12 @@ START_TEST(test_construct_request_first_line_no_proxy_specified)
     set_arguments_values(argc, argv, &args);
 
     printf("bench_time=%d, clients=%d, http_method=%d, target_host=%s, target_port=%d.\n",
-        args.bench_time, args.clients, args.method, args.target_host, args.target_port);
-    
+           args.bench_time, args.clients, args.method, args.target_host, args.target_port);
+
     HTTPRequest request = {0};
 
-    if (build_request(&args, &request) == 0) {
+    if (build_request(&args, &request) == 0)
+    {
         printf("Request: host=%s, body=\n%s", request.host, request.body);
     }
     ck_assert_int_ne(strlen(request.body), 0);
@@ -34,7 +35,6 @@ START_TEST(test_construct_request_first_line_no_proxy_specified)
 
     // }
     ck_assert_str_eq(request.body, expected_request_first_line);
-
 }
 
 START_TEST(test_construct_request_first_line_with_proxy_specified)
@@ -47,10 +47,11 @@ START_TEST(test_construct_request_first_line_with_proxy_specified)
     set_arguments_values(argc, argv, &args);
 
     printf("bench_time=%d, clients=%d, http_method=%d, target_host=%s, target_port=%d, proxy_host=%s, proxy_port=%d.\n",
-        args.bench_time, args.clients, args.method, args.target_host, args.target_port, args.proxy_host, args.proxy_port);
-    
+           args.bench_time, args.clients, args.method, args.target_host, args.target_port, args.proxy_host, args.proxy_port);
+
     HTTPRequest request = {0};
-    if (build_request(&args, &request) == 0) {
+    if (build_request(&args, &request) == 0)
+    {
         printf("Request: host=%s, body=\n%s", request.host, request.body);
     }
 

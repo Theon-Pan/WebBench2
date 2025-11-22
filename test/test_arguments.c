@@ -5,10 +5,10 @@
 
 START_TEST(test_proxy_server_str_default_hostname)
 {
-    char *argv[] = {"webbench2", "-t", "10", "-c", "5", "-p", ":7891", "https://www.baidu.com" };
+    char *argv[] = {"webbench2", "-t", "10", "-c", "5", "-p", ":7891", "https://www.baidu.com"};
     int argc = 8;
     Arguments arg = create_default_arguments();
-    
+
     set_arguments_values(argc, argv, &arg);
 
     printf("bench_time=%d, clients=%d, proxy_host = %s, proxy_port=%d, url=%s, http_protocol=%d, target_host=%s, target_port=%d\n",
@@ -25,7 +25,6 @@ START_TEST(test_proxy_server_str_default_hostname)
     ck_assert_ptr_nonnull(arg.target_host);
     ck_assert_str_eq(arg.target_host, "www.baidu.com");
     ck_assert_int_eq(arg.target_port, 443);
-
 }
 END_TEST
 
@@ -38,7 +37,7 @@ START_TEST(test_proxy_server_str_default_port)
     set_arguments_values(argc, argv, &arg);
 
     printf("bench_time=%d, clients=%d, proxy_host=%s, proxy_port=%d, url=%s, http_protocol=%d\n",
-        arg.bench_time, arg.clients, arg.proxy_host, arg.proxy_port, arg.url, arg.protocol);
+           arg.bench_time, arg.clients, arg.proxy_host, arg.proxy_port, arg.url, arg.protocol);
 
     ck_assert_int_eq(arg.bench_time, 10);
     ck_assert_int_eq(arg.clients, 5);
@@ -60,7 +59,7 @@ START_TEST(test_proxy_server_str_default_port_1)
     set_arguments_values(argc, argv, &arg);
 
     printf("bench_time=%d, clients=%d, proxy_host=%s, proxy_port=%d, url=%s, http_protocol=%d, target_host=%s, target_port=%d\n",
-        arg.bench_time, arg.clients, arg.proxy_host, arg.proxy_port, arg.url, arg.protocol, arg.target_host, arg.target_port);
+           arg.bench_time, arg.clients, arg.proxy_host, arg.proxy_port, arg.url, arg.protocol, arg.target_host, arg.target_port);
 
     ck_assert_int_eq(arg.bench_time, 10);
     ck_assert_int_eq(arg.clients, 5);
@@ -84,7 +83,7 @@ START_TEST(test_proxy_server_str_normal_format)
     set_arguments_values(argc, argv, &arg);
 
     printf("bench_time=%d, clients=%d, proxy_host=%s, proxy_port=%d, url=%s, http_protocol=%d\n",
-        arg.bench_time, arg.clients, arg.proxy_host, arg.proxy_port, arg.url, arg.protocol);
+           arg.bench_time, arg.clients, arg.proxy_host, arg.proxy_port, arg.url, arg.protocol);
 
     ck_assert_int_eq(arg.bench_time, 10);
     ck_assert_int_eq(arg.clients, 5);
@@ -105,8 +104,8 @@ START_TEST(test_legal_http_method)
     set_arguments_values(argc, argv, &args);
 
     printf("bench_time=%d, clients=%d, proxy_host=%s, proxy_port=%d, http_method=%d, url=%s, http_protocol=%d\n",
-        args.bench_time, args.clients, args.proxy_host, args.proxy_port, args.method, args.url, args.protocol);
-    
+           args.bench_time, args.clients, args.proxy_host, args.proxy_port, args.method, args.url, args.protocol);
+
     ck_assert_int_eq(args.bench_time, 10);
     ck_assert_int_eq(args.clients, 5);
     ck_assert_ptr_nonnull(args.proxy_host);
@@ -126,8 +125,8 @@ START_TEST(test_illegal_http_method)
     set_arguments_values(argc, argv, &args);
 
     printf("bench_time=%d, clients=%d, proxy_host=%s, proxy_port=%d, http_method=%d, url=%s, http_protocol=%d\n",
-        args.bench_time, args.clients, args.proxy_host, args.proxy_port, args.method, args.url, args.protocol);
-    
+           args.bench_time, args.clients, args.proxy_host, args.proxy_port, args.method, args.url, args.protocol);
+
     ck_assert_int_eq(args.bench_time, 10);
     ck_assert_int_eq(args.clients, 5);
     ck_assert_ptr_nonnull(args.proxy_host);
@@ -145,8 +144,8 @@ START_TEST(test_url_contains_target_host_and_port)
     Arguments args = create_default_arguments();
     set_arguments_values(argc, argv, &args);
 
-    printf("bench_time=%d, clients=%d, url=%s, target_host=%s, target_port=%d\n", 
-        args.bench_time, args.clients, args.url, args.target_host, args.target_port);
+    printf("bench_time=%d, clients=%d, url=%s, target_host=%s, target_port=%d\n",
+           args.bench_time, args.clients, args.url, args.target_host, args.target_port);
 
     ck_assert_int_eq(args.bench_time, 10);
     ck_assert_int_eq(args.clients, 5);
@@ -156,10 +155,7 @@ START_TEST(test_url_contains_target_host_and_port)
     ck_assert_int_eq(args.protocol, PROTOCOL_HTTPS);
     ck_assert_str_eq(args.target_host, "www.baidu.com");
     ck_assert_int_eq(args.target_port, 1234567);
-
 }
-
-
 
 Suite *arguments_suite(void)
 {
