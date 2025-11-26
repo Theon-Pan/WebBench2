@@ -37,7 +37,7 @@ void* bench_worker(void *arg){
 
 }
 
-void* bench_worker_no_race(void *arg){
+void* bench_worker_no_racing(void *arg){
     BenchDataNoRace *data = (BenchDataNoRace *) arg;
     time_t start_time = time(NULL);
     int local_speed = 0;
@@ -167,7 +167,7 @@ void bench_with_no_racing(const Arguments *args, const HTTPRequest *http_request
         bench_data_no_race[i].failed = 0;
         bench_data_no_race[i].bytes = 0;
 
-        if (pthread_create(&threads[i], NULL, bench_worker_no_race, &bench_data_no_race[i])) {
+        if (pthread_create(&threads[i], NULL, bench_worker_no_racing, &bench_data_no_race[i])) {
             fprintf(stderr, "Failed to create thread [%d]\n", i);
             return;
         }
