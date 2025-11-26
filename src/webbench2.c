@@ -1,4 +1,6 @@
 #include "arguments.h"
+#include "request.h"
+#include "bench2.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -15,4 +17,10 @@ int main(int argc, char *argv[])
 
     printf("bench time = %d, clients = %d, proxy_host = %s, proxy_port = %d, url = %s \n",
            args.bench_time, args.clients, args.proxy_host, args.proxy_port, args.url);
+
+    HTTPRequest http_request = {0};
+    build_request(&args, &http_request);
+
+    // bench(&args, &http_request);
+    bench_with_no_racing(&args, &http_request);
 }
