@@ -89,7 +89,7 @@ int build_request(Arguments *args, HTTPRequest *request)
     }
 
     // Set no-cache header if the proxy is specified.
-    if (strlen(args->proxy_host) != 0)
+    if (strlen(args->proxy_host) != 0 && args->force_reload)
     {
         if (HTTP_VERSION_1_0 == args->http10)
         {
