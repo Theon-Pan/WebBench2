@@ -1,7 +1,7 @@
 CFLAGS ?= -Wall -ggdb -W -O
 INCLUDES ?= -Iinclude
 CC ?= gcc
-LIBS ?= -lssl -lcrypto
+LIBS ?= -lssl -lcrypto -lpthread
 TEST_LIBS ?= -lcheck
 LDFLAGS ?=
 PREFIX ?= /usr/local/webbench2
