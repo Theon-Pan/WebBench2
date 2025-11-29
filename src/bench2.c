@@ -3,6 +3,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include "communicator.h"
 
 double get_time_diff_ns(struct timespec start, struct timespec end) {
     return (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0;
@@ -18,13 +19,22 @@ void* bench_worker(void *arg){
     printf("Thread [%d] started.\n", data->thread_id);
 
     while(time(NULL) - start_time < data->args->bench_time) {
-        // @todo: Invoke function to send http/https request to proxy or target server
-        local_bytes += 1;
-        local_failed += 1;
-        local_speed += 1;
+        // Send http/https request to proxy or target server.
+        int ret = communicate(data->args, data->request);
+
+        if (ret >= 0)
+        {
+            local_bytes += ret;
+            local_speed ++;
+        }
+        else if (ret < 0)
+        {
+            local_failed ++;
+        }
+        
         // Add a small delay to prevent infinite tight loop
         usleep(100000); // 100ms delay
-        printf("Thread [%d] working...\n", data->thread_id);
+        printf("Thread [%d] is working...\n", data->thread_id);
     }
 
     pthread_mutex_lock(data->stats_mutex);
@@ -47,7 +57,8 @@ void* bench_worker_no_racing(void *arg){
     printf("Thread [%d] started.\n", data->thread_id);
 
     while(time(NULL) - start_time < data->args->bench_time) {
-        // @todo: Invoke function to send http/https request to proxy or target server
+        // Send http/https request to proxy or target server.
+
         local_bytes += 1;
         local_failed += 1;
         local_speed += 1;

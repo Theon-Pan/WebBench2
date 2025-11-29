@@ -21,6 +21,6 @@ int main(int argc, char *argv[])
     HTTPRequest http_request = {0};
     build_request(&args, &http_request);
 
-    // bench(&args, &http_request);
-    bench_with_no_racing(&args, &http_request);
+    bench(&args, &http_request);
+    // bench_with_no_racing(&args, &http_request);
 }

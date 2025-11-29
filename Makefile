@@ -39,7 +39,7 @@ arguments.o: prepare include/arguments.h src/arguments.c
 request.o: prepare include/request.h src/request.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c src/request.c -o $(TARGET_DIR)request.o
 
-bench2.o: prepare include/bench2.h src/bench2.c
+bench2.o: prepare include/bench2.h src/bench2.c include/communicator.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c src/bench2.c -o $(TARGET_DIR)bench2.o
 
 communicator.o: prepare include/communicator.h src/communicator.c
@@ -50,7 +50,7 @@ webbench2.o: prepare src/webbench2.c include/arguments.h
 	@echo "Compiled webbench2.o successfully."
 
 $(TARGET): prepare test_arguments test_request webbench2.o arguments.o request.o bench2.o communicator.o
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $(TARGET_DIR)$(TARGET) $(TARGET_DIR)webbench2.o $(TARGET_DIR)arguments.o $(TARGET_DIR)request.o $(TARGET_DIR)bench2.o -lpthread $(TEST_LIBS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(TARGET_DIR)$(TARGET) $(TARGET_DIR)webbench2.o $(TARGET_DIR)arguments.o $(TARGET_DIR)request.o $(TARGET_DIR)bench2.o $(TARGET_DIR)communicator.o $(LIBS)
 	@echo "WebBench 2 compiled successfully."
 
 clean:

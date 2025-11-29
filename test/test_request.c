@@ -40,14 +40,14 @@ START_TEST(test_construct_request_first_line_no_proxy_specified)
 START_TEST(test_construct_request_first_line_with_proxy_specified)
 {
     char *argv[] = {"webbench2", "-t", "10", "-c", "5", "--options", "--proxy", "localhost:7891", "https://www.baidu.com:12345"};
-    char *expected_request_first_line = "OPTIONS https://www.baidu.com:12345/ HTTP/1.1\r\nUser-Agent: WebBench 2\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n";
+    char *expected_request_first_line = "OPTIONS https://www.baidu.com:12345/ HTTP/1.1\r\nUser-Agent: WebBench 2\r\nConnection: close\r\n\r\n";
     int argc = 9;
 
     Arguments args = create_default_arguments();
     set_arguments_values(argc, argv, &args);
 
-    printf("bench_time=%d, clients=%d, http_method=%d, target_host=%s, target_port=%d, proxy_host=%s, proxy_port=%d.\n",
-           args.bench_time, args.clients, args.method, args.target_host, args.target_port, args.proxy_host, args.proxy_port);
+    printf("bench_time=%d, clients=%d, http_method=%d, target_host=%s, target_port=%d, proxy_host=%s, proxy_port=%d, force_reload=%d.\n",
+           args.bench_time, args.clients, args.method, args.target_host, args.target_port, args.proxy_host, args.proxy_port, args.force_reload);
 
     HTTPRequest request = {0};
     if (build_request(&args, &request) == 0)
