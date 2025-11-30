@@ -50,12 +50,44 @@ static int send_tls_data(SSL *ssl, const char *data, int len)
     int total_sent = 0;
     int error;
 
+    if (ssl == NULL || data == NULL || len <= 0)
+    {
+        return -1;
+    }
+
     while (total_sent < len)
     {
         bytes_sent = SSL_write(ssl, data + total_sent, len - total_sent);
         if (bytes_sent <= 0)
         {
             error = SSL_get_error(ssl, bytes_sent);
+            switch (error)
+            {
+                case SSL_ERROR_WANT_WRITE:
+                case SSL_ERROR_WANT_READ:
+                    continue;
+                case SSL_ERROR_SYSCALL:
+                    if (bytes_sent == 0)
+                    {
+                        fprintf(stderr, "SSL_write: Unexpected EOF\n");
+                    }
+                    else
+                    {
+                        perror("SSL_write syscall error");
+                        ERR_print_errors_fp(stderr);
+                    }
+                    return -1;
+                case SSL_ERROR_ZERO_RETURN:
+                    return -1;
+                case SSL_ERROR_SSL:
+                    ERR_print_errors_fp(stderr);
+                    return -1;
+                default:
+                    fprintf(stderr, "SSL write error: %d\n", error);
+                    ERR_print_errors_fp(stderr);
+                    return -1;
+            }
+
             if (error == SSL_ERROR_WANT_WRITE)
             {
                 continue; // Send buffer has been filled, need retry.
@@ -63,6 +95,7 @@ static int send_tls_data(SSL *ssl, const char *data, int len)
             fprintf(stderr, "SSL write error: %d\n", error);
             return -1;
         }
+        total_sent += bytes_sent;
     }
 
     return total_sent;
@@ -143,10 +176,14 @@ static int Socket(const char *host, const int port)
         if (connect(sockfd, rp->ai_addr, rp->ai_addrlen) == -1)
         {
             close(sockfd);
+            rp = rp->ai_next;
             continue; // Try next address.
         }
+        else
+        {
+            break;
+        }
 
-        rp = rp->ai_next;
     }
 
     freeaddrinfo(result);
@@ -187,7 +224,7 @@ static int handle_proxy_connect(const char *proxy_host, const int proxy_port, co
             "Host: %s:%d\r\n"
             "Connection: close\r\n\r\n",
             target_host, target_port, target_host, target_port);
-    if (send(proxy_sockfd, connect_request, sizeof(connect_request), 0) < 0)
+    if (send(proxy_sockfd, connect_request, strlen(connect_request), 0) < 0)
     {
         close(proxy_sockfd);
         return -1;
@@ -242,7 +279,7 @@ static int communicate_through_http(const char *host, int port, const HTTPReques
     }
 
     // Send HTTP request.
-    ssize_t sent = send(sockfd, http_request->body, sizeof(http_request->body), 0);
+    ssize_t sent = send(sockfd, http_request->body, strlen(http_request->body), 0);
     if (sent < 0)
     {
         close(sockfd);
