@@ -4,8 +4,6 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netdb.h>
-#include <openssl/ssl.h>
-#include <openssl/err.h>
 #include <pthread.h>
 
 static pthread_once_t ssl_init_once = PTHREAD_ONCE_INIT;
@@ -44,7 +42,7 @@ static SSL_CTX* create_ssl_context()
 }
 
 // Send data over TLS connection.
-static int send_tls_data(SSL *ssl, const char *data, int len)
+int send_tls_data(SSL *ssl, const char *data, int len)
 {
     int bytes_sent = 0;
     int total_sent = 0;
@@ -102,7 +100,7 @@ static int send_tls_data(SSL *ssl, const char *data, int len)
 }
 
 // Receive data over TLS connection.
-static int recv_tls_data(SSL *ssl, char *buffer, int buffer_size)
+int recv_tls_data(SSL *ssl, char *buffer, int buffer_size)
 {
     int bytes_received = 0;
     int total_received = 0;

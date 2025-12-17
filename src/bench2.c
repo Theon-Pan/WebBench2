@@ -82,7 +82,7 @@ void bench(const Arguments *args, const HTTPRequest *http_request) {
     struct timespec request_start, request_end;
 
     if (NULL == args || NULL == http_request) {
-        fprintf(stderr, "No args or request to bench.");
+        fprintf(stderr, "No args or request to bench.\n");
         return;
     }
 
