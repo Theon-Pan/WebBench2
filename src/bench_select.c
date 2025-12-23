@@ -10,7 +10,7 @@
 
 #define MAX_CONNECTIONS 100
 #define BUFFER_SIZE 1024
-
+#define RECV_BUFFER_SIZE 8096
 typedef enum
 {
     CONN_IDLE,
@@ -32,7 +32,11 @@ typedef struct
     SSL *ssl;
     bool is_https;
     const HTTPRequest *request;
+    char received_response[RECV_BUFFER_SIZE];
+    int request_len;
     const int force_flag;
+    int bytes_sent;
+    int bytes_received;
     int speed;
     int failed;
     int bytes;
@@ -74,11 +78,10 @@ static void cleanup_ssl(void)
         SSL_CTX_free(global_ssl_ctx);
 
         // Cleanup OpenSSL
-        EVP_cleanup();          // Free algorithm tables.
-        ERR_free_strings();     // Free error message strings.
-        CRYPTO_cleanup_all_ex_data();   // Additional cleanup.
+        EVP_cleanup();                // Free algorithm tables.
+        ERR_free_strings();           // Free error message strings.
+        CRYPTO_cleanup_all_ex_data(); // Additional cleanup.
     }
-
 }
 
 static int create_nonblocking_socket(const char *host, const int port)
@@ -164,7 +167,7 @@ static int send_proxy_connect(connection *conn, const char *proxy_host, const in
         fprintf(stderr, "Illegal proxy or target port number.\n");
         return -1;
     }
-    
+
     if (conn->sockfd < 0)
     {
         fprintf(stderr, "No socket ready.\n");
@@ -173,11 +176,11 @@ static int send_proxy_connect(connection *conn, const char *proxy_host, const in
 
     // Construct CONNECT request body and send it to establish the connection between client and proxy.
     snprintf(connect_request, sizeof(connect_request),
-            "CONNECT %s:%d HTTP/1.1\r\n"
-            "Host: %s:%d\r\n"
-            "Connection: close\r\n\r\n",
-            target_host, target_port, target_host, target_port);
-    
+             "CONNECT %s:%d HTTP/1.1\r\n"
+             "Host: %s:%d\r\n"
+             "Connection: close\r\n\r\n",
+             target_host, target_port, target_host, target_port);
+
     sszie_t sent_bytes = send(conn->sockfd, connect_request, strlen(connect_request), 0);
     if (sent_bytes <= 0)
     {
@@ -234,9 +237,13 @@ static void init_connection(const Arguments *args, const HTTPRequest *http_reque
     conn->failed = 0;
     conn->bytes = 0;
     conn->request = http_request;
+    conn->received_response = {0};
+    conn->request_len = strlen(http_request->body);
+    conn->bytes_sent = 0;
+    conn->bytes_received = 0;
 }
 
-static void allocate_socket(const Arguments *args, const HTTPRequest *http_request, connection * conn)
+static void allocate_socket(const Arguments *args, const HTTPRequest *http_request, connection *conn)
 {
     if (NULL == args || NULL == http_request || NULL == conn)
     {
@@ -270,6 +277,8 @@ static void cleanup_connection(connection *conn)
     }
     conn->ssl_context = NULL;
     conn->state = CONN_IDLE;
+    conn->bytes_sent = 0;
+    conn->bytes_received = 0;
 }
 
 static void setup_connection_fdsets(connection *conn, fd_set *read_fds, fd_set *write_fds, int *max_fd)
@@ -279,26 +288,26 @@ static void setup_connection_fdsets(connection *conn, fd_set *read_fds, fd_set *
         return;
     }
 
-    switch(conn->state)
+    switch (conn->state)
     {
-        case CONN_CONNECTING:
-        case CONN_SENDING:
-        case CONN_PROXY_CONNECT:
-            FD_SET(conn->sockfd, write_fds);
-            break;
-        case CONN_TLS_HANDSHAKE:
-            if (conn->ssl)
-            {
-                FD_SET(conn->sockfd, read_fds);
-                FD_SET(conn->sockfd, write_fds);
-            }
-            break;
-        case CONN_RECEIVING:
-        case CONN_PROXY_RESPONSE:
+    case CONN_CONNECTING:
+    case CONN_SENDING:
+    case CONN_PROXY_CONNECT:
+        FD_SET(conn->sockfd, write_fds);
+        break;
+    case CONN_TLS_HANDSHAKE:
+        if (conn->ssl)
+        {
             FD_SET(conn->sockfd, read_fds);
-            break;
-        default:
-            return;
+            FD_SET(conn->sockfd, write_fds);
+        }
+        break;
+    case CONN_RECEIVING:
+    case CONN_PROXY_RESPONSE:
+        FD_SET(conn->sockfd, read_fds);
+        break;
+    default:
+        return;
     }
     if (conn->sockfd > *max_fd)
     {
@@ -314,124 +323,309 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
         return -1;
     }
 
-    switch(conn->state) {
-        case CONN_CONNECTING:
-            if (FD_ISSET(conn->sockfd, write_ds))
+    switch (conn->state)
+    {
+    case CONN_CONNECTING:
+        if (FD_ISSET(conn->sockfd, write_ds))
+        {
+            // Cause it's non-block sock, so before using it, check if it's really ready.
+            int error = 0;
+            socklen_t len = sizeof(error);
+            if (getsockopt(conn->sockfd, SOL_SOCKET, SO_ERROR, &error, len) && error == 0)
             {
-                // Cause it's non-block sock, so before using it, check if it's really ready.
-                int error = 0;
-                socklen_t  len = sizeof(error);
-                if (getsockopt(conn->sockfd, SOL_SOCKET, SO_ERROR, &error, len) && error == 0)
+                if (need_connect_proxy(args) && args->protocol == PROTOCOL_HTTPS)
                 {
-                    if (need_connect_proxy(args) && args->protocol == PROTOCOL_HTTPS)
-                    {
-                        conn->state = CONN_PROXY_CONNECT;
-                    }
-                    else
-                    {
-                        conn->state = conn->is_https ? CONN_TLS_HANDSHAKE : CONN_SENDING;
-    
-                        // If protocol is HTTPS, set SSL context.
-                        if (conn->is_https)
-                        {
-                            conn->ssl_context = get_global_ssl_ctx();
-                            if (NULL == conn->ssl_context)
-                            {
-                                conn->state = CONN_ERROR;
-                                return -1;
-                            }
-        
-                            conn->ssl = SSL_new(conn->ssl_context);
-                            SSL_set_fd(conn->ssl, conn->sockfd);
-                            SSL_set_tlsext_host_name(conn->ssl, args->target_host);
-                        }
-                    }
-
-                }
-                else{
-                    conn->state = CONN_ERROR;
-                    return -1;
-                }
-            }
-            break;
-        case CONN_PROXY_CONNECT:
-            if (FD_ISSET(conn->sockfd, write_fds))
-            {
-                int sent = send_proxy_connect(conn, args);
-                if (sent > 0)
-                {
-                    conn->state = CONN_PROXY_RESPONSE;
-                }
-                else if (sent == 0)
-                {
-                    // Do not mean failed, just continue to sent request on next select.
-                    return 0;
+                    conn->state = CONN_PROXY_CONNECT;
                 }
                 else
+                {
+                    conn->state = conn->is_https ? CONN_TLS_HANDSHAKE : CONN_SENDING;
+
+                    // If protocol is HTTPS, set SSL context.
+                    if (conn->is_https)
+                    {
+                        conn->ssl_context = get_global_ssl_ctx();
+                        if (NULL == conn->ssl_context)
+                        {
+                            conn->state = CONN_ERROR;
+                            conn->failed++;
+                            return -1;
+                        }
+
+                        conn->ssl = SSL_new(conn->ssl_context);
+                        SSL_set_fd(conn->ssl, conn->sockfd);
+                        SSL_set_tlsext_host_name(conn->ssl, args->target_host);
+                    }
+                }
+            }
+            else
+            {
+                conn->state = CONN_ERROR;
+                conn->failed++;
+                return -1;
+            }
+        }
+        break;
+    case CONN_PROXY_CONNECT:
+        if (FD_ISSET(conn->sockfd, write_fds))
+        {
+            int sent = send_proxy_connect(conn, args);
+            if (sent > 0)
+            {
+                conn->state = CONN_PROXY_RESPONSE;
+            }
+            else if (sent == 0)
+            {
+                // Do not mean failed, just continue to sent request on next select.
+                return 0;
+            }
+            else
+            {
+                conn->state = CONN_ERROR;
+                conn->failed++;
+                return -1
+            }
+        }
+        break;
+    case CONN_PROXY_RESPONSE:
+        if (FD_ISSET(conn->sockfd, read_fds))
+        {
+            int result = handle_proxy_response(conn);
+            if (result == 1)
+            {
+                // Proxy tunnel established, now setup SSL
+                conn->state = CONN_TLS_HANDSHAKE;
+                conn->ssl_context = get_global_ssl_ctx();
+                if (NULL == conn->ssl_context)
                 {
                     conn->state = CONN_ERROR;
                     return -1
                 }
+                conn->ssl = SSL_new(conn->ssl_context);
+                SSL_set_fd(conn->ssl, conn->sockfd);
+                SSL_set_tlsext_host_name(conn->ssl, args->target_host);
             }
-            break;
-        case CONN_PROXY_RESPONSE:
-            if (FD_ISSET(conn->sockfd, read_fds))
+            else if (result == 0)
             {
-                int result = handle_proxy_response(conn);
-                if (result == 1)
+                // Do not mean failed, just continue to receive on next select.
+                return 0;
+            }
+            else
+            {
+                conn->state = CONN_ERROR;
+                conn->failed++;
+                return -1;
+            }
+        }
+        break;
+    case CONN_TLS_HANDSHAKE:
+        if (conn->ssl && (FD_ISSET(conn->sockfd, read_fds) || FD_ISSET(conn->sockfd, write_fds)))
+        {
+            int ssl_result = SSL_connect(con->ssl);
+            if (ssl_result == 1)
+            {
+                conn->state = CONN_SENDING;
+            }
+            else
+            {
+                int ssl_error = SSL_get_error(conn->ssl, ssl_result);
+                if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE)
                 {
-                    // Proxy tunnel established, now setup SSL
-                    conn->state = CONN_TLS_HANDSHAKE;
-                    conn->ssl_context = get_global_ssl_ctx();
-                    if (NULL == conn->ssl_context)
-                    {
-                        conn->state = CONN_ERROR;
-                        return -1
-                    }
-                    conn->ssl = SSL_new(conn->ssl_context);
-                    SSL_set_fd(conn->ssl, conn->sockfd);
-                    SSL_set_tlsext_host_name(conn->ssl, args->target_host);
-                }
-                else if (result == 0)
-                {
-                    // Do not mean failed, just continue to receive on next select.
+                    // Continue handshake on next select.
                     return 0;
                 }
                 else
                 {
                     conn->state = CONN_ERROR;
+                    conn->failed++;
                     return -1;
                 }
             }
-            break;
-        case CONN_TLS_HANDSHAKE:
-            if (conn->ssl && (FD_ISSET(conn->sockfd, read_fds) || FD_ISSET(conn->sockfd, write_fds)))
+        }
+        break;
+    case CONN_SENDING:
+        if (FD_ISSET(conn->sockfd, write_fds))
+        {
+            // If the whole request has been sent.
+            int remaining = conn->request_len - conn->bytes_sent;
+            if (remaining <= 0)
             {
-                int ssl_result = SSL_connect(con->ssl);
-                if (ssl_result == 1)
+                conn->force_flag ? conn->state = CONN_COMPLETED : conn->state = CONN_RECEIVING;
+            }
+            else
+            {
+                if (conn->is_https)
                 {
-                    conn->state = CONN_SENDING;
-                }
-                else
-                {
-                    int ssl_error = SSL_get_error(conn->ssl, ssl_result);
-                    if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE)
+                    int bytes_written;
+                    if (conn->ssl)
                     {
-                        // Continue handshake on next select.
-                        return 0;
+                        // HTTPS connection.
+                        bytes_written = SSL_write(conn->ssl, conn->request_len + conn->bytes_sent, remaining);
+                        if (bytes_written > 0)
+                        {
+                            conn->bytes_sent += bytes_written;
+                            // Check if all request data has been sent.
+                            if (conn->bytes_sent >= conn->request_len)
+                            {
+                                conn->force_flag ? conn->state = CONN_COMPLETED : conn->state = CONN_RECEIVING;
+                            }
+                        }
+                        else
+                        {
+                            int ssl_error = SSL_get_error(conn->ssl, bytes_written);
+                            if (ssl_error == SSL_ERROR_WANT_WRITE || ssl_error == SSL_ERROR_WANT_READ)
+                            {
+                                // SSL wants to write/read more, try again on the next select.
+                                return 0;
+                            }
+                            else
+                            {
+                                // Real error occurred.
+                                conn->state = CONN_ERROR;
+                                conn->failed ++;
+                                return -1;
+                            }
+                        }
                     }
                     else
                     {
                         conn->state = CONN_ERROR;
+                        conn->failed ++;
+                        return -1;
+                    }
+                }
+                else
+                {
+                    // HTTP connection.
+                    bytes_written = send(conn->sockfd, conn->request + conn->bytes_sent, remaining);
+                    if (bytes_written > 0)
+                    {
+                        conn->bytes_sent += bytes_written;
+                        // Check if all request data has been sent.
+                        if (conn->bytes_sent >= conn->request_len)
+                        {
+                            conn->force_flag ? conn->state = CONN_COMPLETED : conn->state = CONN_RECEIVING;
+                        }
+                    }
+                    else if (bytes_written == -1 && ( errno == EAGAIN || errno == EWOULDBLOCK))
+                    {
+                        // Socket not ready, try again on the next select.
+                        return 0;
+                    }
+                    else
+                    {
+                        // Real error occurred.
+                        conn->state = CONN_ERROR;
+                        conn->fail ++;
                         return -1;
                     }
                 }
             }
-            break;
+        }
+        break;
+    case CONN_RECEIVING:
+        if (FD_ISSET(conn->sockfd, read_fds))
+        {
+            int bytes_read = 0;
+            int remaining_recv = sizeof(conn->received_response) - conn->bytes_received - 1;
+            if (remaining_recv <= 0)
+            {
+                conn->state = CONN_COMPLETED;
+                conn->speed ++;
+            }
+            if (conn->is_https)
+            {
+                if (conn->ssl)
+                {
+                    // HTTPS connection.
+                    bytes_read = SSL_read(conn->ssl, conn->received_response + conn->bytes_received, remaining_recv);
+                    if (bytes_read > 0)
+                    {
+                        conn->bytes_received += bytes_read;
+                        conn->received_response[conn->bytes_received] = '\0';
+
+                        // Check for the end of HTTP headers.
+                        if (strstr(conn->received_response, "\r\n\r\n"))
+                        {
+                            // Headers complete.
+                            conn->state = CONN_COMPLETED;
+                            conn->bytes += conn->bytes_received;
+                            conn->speed ++;
+                        }
+                        else
+                        {
+                            // Continue to read.
+                            return 0;
+                        }
+                    }
+                    else 
+                    {
+                        int ssl_error = SSL_get_error(conn->ssl, bytes_read);
+                        if (ssl_error == SSL_ERROR_WANT_WRITE || ssl_error == SSL_ERROR_WANT_READ)
+                        {
+                            // SSL wants to read or write more, try again on the next select.
+                            return 0;
+                        }
+                        else
+                        {
+                            // Real error occurred.
+                            conn->state = CONN_ERROR;
+                            conn->failed ++;
+                            return -1;
+                        }
+                    }
+
+                }
+                else
+                {
+                    conn->state = CONN_ERROR;
+                    conn->failed ++;
+                    return -1;
+                }
+
+            }
+            else
+            {
+                // HTTP connection.
+                bytes_read = recv(conn->sockds, conn->received_response + conn->bytes_received, remaining_recv, 0);
+                if (bytes_read > 0)
+                {
+                    conn->bytes_received += bytes_read;
+                    conn->received_response[conn->bytes_received] = '\0';
+
+                    // Check if meeting the end of HTTP headers.
+                    if (strstr(conn->received_response, "\r\n\r\n"))
+                    {
+                        // Headers received completly.
+                        conn->state = CONN_COMPLETED;
+                        conn->bytes += conn->bytes_received;
+                        conn->speed ++;
+                    }
+                    else
+                    {
+                        // Continue to read on the next select.
+                        return 0;
+                    }
+                }
+                else if (bytes_read == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
+                {
+                    // Socket not ready, try again on the next select.
+                    return 0;
+                }
+                else
+                {
+                    // Real error occurred.
+                    conn->state = CONN_ERROR;
+                    conn->failed ++;
+                    return -1;
+                }
+            }
+
+        }
+        break;
     }
 
     return 0;
-
 }
 
 void bench_select(const Arguments *args, const HTTPRequest *http_request)
@@ -440,7 +634,7 @@ void bench_select(const Arguments *args, const HTTPRequest *http_request)
     time_t start_time = time(NULL);
     fd_set read_fds, write_fds;
     int max_fd = 0;
-    struct timeval select_timeout = {0, 100000};    // 100ms timeout
+    struct timeval select_timeout = {0, 100000}; // 100ms timeout
 
     if (NULL == args || NULL == http_request)
     {
@@ -455,7 +649,7 @@ void bench_select(const Arguments *args, const HTTPRequest *http_request)
         printf("Warning: Limited to %d connections to server.\n", num_connections);
     }
 
-    connection *connections = (connection *) malloc(num_connections * sizeof(connection));
+    connection *connections = (connection *)malloc(num_connections * sizeof(connection));
     if (NULL == connections)
     {
         perror("Memory allocation for connections is failed");
@@ -504,16 +698,28 @@ void bench_select(const Arguments *args, const HTTPRequest *http_request)
                 for (int i = 0; i < num_connections; i++)
                 {
                     handle_ready_connection(connections[i], args, http_request, &read_fds, &write_fds);
-
                 }
             }
-
         }
-
     }
-
+    
+    // Release all sockets, ssl and ssl context, free the memory for connections array, summary the results.
+    int total_failed = 0;
+    int total_bytes = 0;
+    int total_speed = 0;
     if (connections != NULL)
     {
+        for (int i = 0; i < num_connections; i++)
+        {
+            total_failed += connections[i].failed;
+            total_speed += connections[i].speed;
+            total_bytes += connections[i].bytes;
+            cleanup_connection(&connections[i]);
+        }
+        cleanup_ssl();
         free(connections);
     }
+
+    printf("Bench select is done. speed=[%d], bytes=[%d], failed=[%d].\n", total_speed, total_bytes, total_failed);
+    
 }
