@@ -1,6 +1,7 @@
 #include "arguments.h"
 #include "request.h"
 #include "bench2.h"
+#include "bench_select.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -23,4 +24,6 @@ int main(int argc, char *argv[])
 
     bench(&args, &http_request);
     // bench_with_no_racing(&args, &http_request);
+
+    // bench_select(&args, &http_request);
 }

@@ -371,7 +371,7 @@ static int communicate_through_https(const char *proxy_host, const int proxy_por
     }
     else
     {
-        printf("Sent %d bytes to server over TLS.\n", sent);
+        printf("Sent %d bytes to server over TLS.[%s]\n", sent, http_request->body);
     }
 
     if (1 == force_flg)
@@ -397,7 +397,7 @@ static int communicate_through_https(const char *proxy_host, const int proxy_por
     }
     else
     {
-        printf("Received %d bytes from server over TLS.\n", received);
+        printf("Received %d bytes from server over TLS.[%s]\n", received, received_buffer);
         return received;
     }
 }

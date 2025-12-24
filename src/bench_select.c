@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <time.h>
 #include <stdbool.h>
+#include <unistd.h>
 
 #define MAX_CONNECTIONS 100
 #define BUFFER_SIZE 1024
@@ -34,7 +35,7 @@ typedef struct
     const HTTPRequest *request;
     char received_response[RECV_BUFFER_SIZE];
     int request_len;
-    const int force_flag;
+    int force_flag;
     int bytes_sent;
     int bytes_received;
     int speed;
@@ -105,7 +106,8 @@ static int create_nonblocking_socket(const char *host, const int port)
     snprintf(port_str, sizeof(port_str), "%d", port);
 
     // Get address info of host.
-    if ((int status = getaddrinfo(host, port_str, &hints, &result)) != 0)
+    int status = getaddrinfo(host, port_str, &hints, &result);
+    if (status != 0)
     {
         fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(status));
         return -1;
@@ -125,10 +127,10 @@ static int create_nonblocking_socket(const char *host, const int port)
         fcntl(sockfd, F_SETFL, flag | O_NONBLOCK);
 
         // Connect to check if the sockfd is available. If not, colse the sockfd and try the next.
-        if (connect(sockfd, rp->ai_addr, rp->ai_addrlen) == -1)
+        if (connect(sockfd, rp->ai_addr, rp->ai_addrlen) == -1 && errno != EINPROGRESS)
         {
             close(sockfd);
-            rp = rp->next;
+            rp = rp->ai_next;
             continue; // Try next address.
         }
         else
@@ -148,15 +150,15 @@ static int create_nonblocking_socket(const char *host, const int port)
     return sockfd;
 }
 
-static bool need_connect_proxy(Arguments *args)
+static bool need_connect_proxy(const Arguments *args)
 {
-    return (args != NULL && args->proxy_host != NULL && strlen(args->proxy_host) && args->proxy_port > 0 && args->proxy_port < 65535)
+    return (args != NULL && strlen(args->proxy_host) && args->proxy_port > 0 && args->proxy_port < 65535);
 }
 
 static int send_proxy_connect(connection *conn, const char *proxy_host, const int proxy_port, const char *target_host, const int target_port)
 {
     char connect_request[BUFFER_SIZE] = {0};
-    if (NULL == proxy_host || NULL == target_host || 0 == strlen(proxy_host) || strlen(target_host))
+    if (0 == strlen(proxy_host) || 0 == strlen(target_host))
     {
         fprintf(stderr, "No proxy or target host specified.\n");
         return -1;
@@ -181,7 +183,7 @@ static int send_proxy_connect(connection *conn, const char *proxy_host, const in
              "Connection: close\r\n\r\n",
              target_host, target_port, target_host, target_port);
 
-    sszie_t sent_bytes = send(conn->sockfd, connect_request, strlen(connect_request), 0);
+    ssize_t sent_bytes = send(conn->sockfd, connect_request, strlen(connect_request), 0);
     if (sent_bytes <= 0)
     {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -198,7 +200,7 @@ static int send_proxy_connect(connection *conn, const char *proxy_host, const in
 static int handle_proxy_response(connection *conn)
 {
     char connect_response[BUFFER_SIZE] = {0};
-    sszie_t received = recv(conn->sockfd, connect_response, sizeof(connect_response) - 1, 0);
+    ssize_t received = recv(conn->sockfd, connect_response, sizeof(connect_response) - 1, 0);
     if (received <= 0)
     {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -227,7 +229,7 @@ static void init_connection(const Arguments *args, const HTTPRequest *http_reque
         fprintf(stderr, "NULL args for calling init_connection.\n");
     }
 
-    *conn = {0};
+    *conn = (connection){0};
     conn->sockfd = -1;
     conn->ssl = NULL;
     conn->is_https = (args->protocol == PROTOCOL_HTTPS);
@@ -237,7 +239,6 @@ static void init_connection(const Arguments *args, const HTTPRequest *http_reque
     conn->failed = 0;
     conn->bytes = 0;
     conn->request = http_request;
-    conn->received_response = {0};
     conn->request_len = strlen(http_request->body);
     conn->bytes_sent = 0;
     conn->bytes_received = 0;
@@ -258,6 +259,11 @@ static void allocate_socket(const Arguments *args, const HTTPRequest *http_reque
     else
     {
         conn->sockfd = create_nonblocking_socket(args->target_host, args->target_port);
+    }
+
+    if (conn->sockfd < 0)
+    {
+        exit(EXIT_FAILURE);
     }
     conn->state = CONN_CONNECTING;
 }
@@ -325,13 +331,17 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
 
     switch (conn->state)
     {
+    case CONN_IDLE:
+    case CONN_COMPLETED:
+    case CONN_ERROR:
+        break;
     case CONN_CONNECTING:
-        if (FD_ISSET(conn->sockfd, write_ds))
+        if (FD_ISSET(conn->sockfd, write_fds))
         {
             // Cause it's non-block sock, so before using it, check if it's really ready.
             int error = 0;
             socklen_t len = sizeof(error);
-            if (getsockopt(conn->sockfd, SOL_SOCKET, SO_ERROR, &error, len) && error == 0)
+            if (getsockopt(conn->sockfd, SOL_SOCKET, SO_ERROR, &error, &len) == 0 && error == 0)
             {
                 if (need_connect_proxy(args) && args->protocol == PROTOCOL_HTTPS)
                 {
@@ -369,7 +379,8 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
     case CONN_PROXY_CONNECT:
         if (FD_ISSET(conn->sockfd, write_fds))
         {
-            int sent = send_proxy_connect(conn, args);
+            printf("Begin to establish SSL Tunnel.\n");
+            int sent = send_proxy_connect(conn, args->proxy_host, args->proxy_port, args->target_host, args->target_port);
             if (sent > 0)
             {
                 conn->state = CONN_PROXY_RESPONSE;
@@ -383,7 +394,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
             {
                 conn->state = CONN_ERROR;
                 conn->failed++;
-                return -1
+                return -1;
             }
         }
         break;
@@ -393,13 +404,15 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
             int result = handle_proxy_response(conn);
             if (result == 1)
             {
+                printf("SSL tunnel established.\n");
                 // Proxy tunnel established, now setup SSL
                 conn->state = CONN_TLS_HANDSHAKE;
                 conn->ssl_context = get_global_ssl_ctx();
                 if (NULL == conn->ssl_context)
                 {
+                    printf("Error when establishing SSL tunnel.\n");
                     conn->state = CONN_ERROR;
-                    return -1
+                    return -1;
                 }
                 conn->ssl = SSL_new(conn->ssl_context);
                 SSL_set_fd(conn->ssl, conn->sockfd);
@@ -412,6 +425,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
             }
             else
             {
+                printf("Error when establishing SSL tunnel.\n");
                 conn->state = CONN_ERROR;
                 conn->failed++;
                 return -1;
@@ -421,7 +435,8 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
     case CONN_TLS_HANDSHAKE:
         if (conn->ssl && (FD_ISSET(conn->sockfd, read_fds) || FD_ISSET(conn->sockfd, write_fds)))
         {
-            int ssl_result = SSL_connect(con->ssl);
+            //printf("Begin to TLS handshake...\n");
+            int ssl_result = SSL_connect(conn->ssl);
             if (ssl_result == 1)
             {
                 conn->state = CONN_SENDING;
@@ -436,38 +451,43 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                 }
                 else
                 {
+                    printf("Error when doing TLS handshake.\n");
                     conn->state = CONN_ERROR;
                     conn->failed++;
                     return -1;
                 }
             }
+            //printf("TLS handshake is done.\n");
         }
         break;
     case CONN_SENDING:
         if (FD_ISSET(conn->sockfd, write_fds))
         {
+            printf("Begin to send bench request...\n");
             // If the whole request has been sent.
             int remaining = conn->request_len - conn->bytes_sent;
             if (remaining <= 0)
             {
-                conn->force_flag ? conn->state = CONN_COMPLETED : conn->state = CONN_RECEIVING;
+                printf("%d bytes of bench request has been sent.[%s]\n", conn->request_len, conn->request->body);
+                conn->state = conn->force_flag ? CONN_COMPLETED : CONN_RECEIVING;
             }
             else
             {
+                int bytes_written;
                 if (conn->is_https)
                 {
-                    int bytes_written;
                     if (conn->ssl)
                     {
                         // HTTPS connection.
-                        bytes_written = SSL_write(conn->ssl, conn->request_len + conn->bytes_sent, remaining);
+                        bytes_written = SSL_write(conn->ssl, conn->request->body + conn->bytes_sent, remaining);
                         if (bytes_written > 0)
                         {
                             conn->bytes_sent += bytes_written;
                             // Check if all request data has been sent.
                             if (conn->bytes_sent >= conn->request_len)
                             {
-                                conn->force_flag ? conn->state = CONN_COMPLETED : conn->state = CONN_RECEIVING;
+                                printf("%d bytes of bench request has been sent.[%s]\n", conn->request_len, conn->request->body);
+                                conn->state = conn->force_flag ? CONN_COMPLETED : CONN_RECEIVING;
                             }
                         }
                         else
@@ -481,6 +501,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                             else
                             {
                                 // Real error occurred.
+                                printf("Bench request sent failed.\n");
                                 conn->state = CONN_ERROR;
                                 conn->failed ++;
                                 return -1;
@@ -489,6 +510,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                     }
                     else
                     {
+                        printf("Bench request sent failed.\n");
                         conn->state = CONN_ERROR;
                         conn->failed ++;
                         return -1;
@@ -497,14 +519,15 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                 else
                 {
                     // HTTP connection.
-                    bytes_written = send(conn->sockfd, conn->request + conn->bytes_sent, remaining);
+                    bytes_written = send(conn->sockfd, conn->request->body + conn->bytes_sent, remaining, 0);
                     if (bytes_written > 0)
                     {
                         conn->bytes_sent += bytes_written;
                         // Check if all request data has been sent.
                         if (conn->bytes_sent >= conn->request_len)
                         {
-                            conn->force_flag ? conn->state = CONN_COMPLETED : conn->state = CONN_RECEIVING;
+                            printf("%d bytes of bench request has been sent.\n", conn->request_len);
+                            conn->state = conn->force_flag ? CONN_COMPLETED : CONN_RECEIVING;
                         }
                     }
                     else if (bytes_written == -1 && ( errno == EAGAIN || errno == EWOULDBLOCK))
@@ -515,8 +538,9 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                     else
                     {
                         // Real error occurred.
+                        printf("Bench request sent failed.\n");
                         conn->state = CONN_ERROR;
-                        conn->fail ++;
+                        conn->failed ++;
                         return -1;
                     }
                 }
@@ -548,6 +572,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                         if (strstr(conn->received_response, "\r\n\r\n"))
                         {
                             // Headers complete.
+                            printf("%d bytes of response received.[%s]\n", conn->bytes_received, conn->received_response);
                             conn->state = CONN_COMPLETED;
                             conn->bytes += conn->bytes_received;
                             conn->speed ++;
@@ -569,6 +594,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                         else
                         {
                             // Real error occurred.
+                            printf("Bench response received failed.\n");
                             conn->state = CONN_ERROR;
                             conn->failed ++;
                             return -1;
@@ -578,6 +604,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                 }
                 else
                 {
+                    printf("Bench request received failed.\n");
                     conn->state = CONN_ERROR;
                     conn->failed ++;
                     return -1;
@@ -587,7 +614,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
             else
             {
                 // HTTP connection.
-                bytes_read = recv(conn->sockds, conn->received_response + conn->bytes_received, remaining_recv, 0);
+                bytes_read = recv(conn->sockfd, conn->received_response + conn->bytes_received, remaining_recv, 0);
                 if (bytes_read > 0)
                 {
                     conn->bytes_received += bytes_read;
@@ -596,6 +623,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                     // Check if meeting the end of HTTP headers.
                     if (strstr(conn->received_response, "\r\n\r\n"))
                     {
+                        printf("%d bytes of response received.\n", conn->bytes_received);
                         // Headers received completly.
                         conn->state = CONN_COMPLETED;
                         conn->bytes += conn->bytes_received;
@@ -615,6 +643,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                 else
                 {
                     // Real error occurred.
+                    printf("%d bytes of response received.\n", conn->bytes_received);
                     conn->state = CONN_ERROR;
                     conn->failed ++;
                     return -1;
@@ -656,6 +685,8 @@ void bench_select(const Arguments *args, const HTTPRequest *http_request)
         return;
     }
 
+    printf("Starting to bench with %d connection/connections...\r\n", num_connections);
+
     // Initialize all connections.
     for (int i = 0; i < num_connections; i++)
     {
@@ -680,10 +711,10 @@ void bench_select(const Arguments *args, const HTTPRequest *http_request)
         {
             // For the connection which complete one communication with server or encounter error,
             // cleanup the original connection and re-connect for next.
-            if (connections[i].state == CONN_COMPLETED || connections[i].state = CONN_ERROR)
+            if (connections[i].state == CONN_COMPLETED || connections[i].state == CONN_ERROR)
             {
                 cleanup_connection(&connections[i]);
-                allocate_socket(&connections[i]);
+                allocate_socket(args, http_request, &connections[i]);
             }
             setup_connection_fdsets(&connections[i], &read_fds, &write_fds, &max_fd);
         }
@@ -691,13 +722,13 @@ void bench_select(const Arguments *args, const HTTPRequest *http_request)
         if (max_fd > 0)
         {
             // Wait for events.
-            int ready = select(max_fd + 1, &read_fds, &write_fds, NULL, select_timeout);
+            int ready = select(max_fd + 1, &read_fds, &write_fds, NULL, &select_timeout);
             if (ready > 0)
             {
                 // handle the ready fds.
                 for (int i = 0; i < num_connections; i++)
                 {
-                    handle_ready_connection(connections[i], args, http_request, &read_fds, &write_fds);
+                    handle_ready_connection(&connections[i], args, http_request, &read_fds, &write_fds);
                 }
             }
         }
