@@ -83,7 +83,7 @@ static void cleanup_ssl(void)
     ERR_free_strings();           // Free error message strings.
     CRYPTO_cleanup_all_ex_data(); // Additional cleanup.
 
-    printf("SSL library cleaned up.\n")
+    printf("SSL library cleaned up.\n");
 }
 
 static int create_nonblocking_socket(const char *host, const int port)

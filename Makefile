@@ -1,7 +1,7 @@
-CFLAGS ?= -Wall -ggdb -W -O
+CFLAGS ?= -Wall -Wextra -ggdb -W -O2 -std=c99 -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L
 INCLUDES ?= -Iinclude
 CC ?= gcc
-LIBS ?= -lssl -lcrypto -lpthread
+LIBS ?= -lssl -lcrypto -lpthread -lrt
 TEST_LIBS ?= -lcheck
 LDFLAGS ?=
 PREFIX ?= /usr/local/webbench2
@@ -48,13 +48,19 @@ communicator.o: prepare include/communicator.h src/communicator.c
 bench_select.o: prepare include/bench_select.h src/bench_select.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c src/bench_select.c -o $(TARGET_DIR)bench_select.o
 
-webbench2.o: prepare src/webbench2.c include/arguments.h
+webbench2.o: prepare src/webbench2.c include/arguments.h include/request.h include/bench2.h include/bench_select.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c src/webbench2.c -o $(TARGET_DIR)webbench2.o
 	@echo "Compiled webbench2.o successfully."
 
 $(TARGET): prepare test_arguments test_request webbench2.o arguments.o request.o bench2.o communicator.o bench_select.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $(TARGET_DIR)$(TARGET) $(TARGET_DIR)webbench2.o $(TARGET_DIR)arguments.o $(TARGET_DIR)request.o $(TARGET_DIR)bench2.o $(TARGET_DIR)communicator.o $(TARGET_DIR)bench_select.o $(LIBS)
 	@echo "WebBench 2 compiled successfully."
+
+debug: CFLAGS += -DDEBUG -O0
+debug: all
+
+release: CFLAGS += -O3 -DNDEBUG
+release: all
 
 clean:
 	rm -rf $(TARGET_DIR)

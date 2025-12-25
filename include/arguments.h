@@ -22,7 +22,7 @@
 #define DEFAULT_BENCH_TIME 30
 
 #define HOSTNAMELEN 128
-#define MAX_URL_LEN 128
+#define MAX_URL_LEN 1024
 
 typedef struct
 {

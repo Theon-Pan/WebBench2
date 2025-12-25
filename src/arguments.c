@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
+#include <strings.h>
 #include <stdbool.h>
 
 bool is_https(const char *url);
@@ -189,7 +190,7 @@ void set_arguments_values(int argc, char *argv[], Arguments *args)
     }
 
     /* Check if the url is a valid one. */
-    if (strlen(argv[optind]) > 1500)
+    if (strlen(argv[optind]) >= MAX_URL_LEN)
     {
         fprintf(stderr, "Invalid url %s: URL is too long.\n", argv[optind]);
         exit(EXIT_FAILURE);
