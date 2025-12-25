@@ -58,10 +58,17 @@ void* bench_worker_no_racing(void *arg){
 
     while(time(NULL) - start_time < data->args->bench_time) {
         // Send http/https request to proxy or target server.
+        int ret = communicate(data->args, data->request);
+        if (ret > 0)
+        {
+            local_bytes += ret;
+            local_speed ++;
+        }
+        else
+        {
+            local_failed ++;
+        }
 
-        local_bytes += 1;
-        local_failed += 1;
-        local_speed += 1;
         // Add a small delay to prevent infinite tight loop
         usleep(100000); // 100ms delay
         printf("Thread [%d] working...\n", data->thread_id);

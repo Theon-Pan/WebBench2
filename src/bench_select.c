@@ -78,11 +78,13 @@ static void cleanup_ssl(void)
     {
         SSL_CTX_free(global_ssl_ctx);
 
-        // Cleanup OpenSSL
-        EVP_cleanup();                // Free algorithm tables.
-        ERR_free_strings();           // Free error message strings.
-        CRYPTO_cleanup_all_ex_data(); // Additional cleanup.
     }
+    // Cleanup OpenSSL
+    EVP_cleanup();                // Free algorithm tables.
+    ERR_free_strings();           // Free error message strings.
+    CRYPTO_cleanup_all_ex_data(); // Additional cleanup.
+
+    printf("SSL library cleaned up.\n")
 }
 
 static int create_nonblocking_socket(const char *host, const int port)
@@ -392,6 +394,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
             }
             else
             {
+                printf("Error when establishing SSL Tunnel.\n");
                 conn->state = CONN_ERROR;
                 conn->failed++;
                 return -1;
@@ -747,9 +750,9 @@ void bench_select(const Arguments *args, const HTTPRequest *http_request)
             total_bytes += connections[i].bytes;
             cleanup_connection(&connections[i]);
         }
-        cleanup_ssl();
         free(connections);
     }
+    cleanup_ssl();
 
     printf("Bench select is done. speed=[%d], bytes=[%d], failed=[%d].\n", total_speed, total_bytes, total_failed);
     
