@@ -9,7 +9,6 @@
 #include <stdbool.h>
 #include <unistd.h>
 
-#define MAX_CONNECTIONS 100
 #define BUFFER_SIZE 1024
 #define RECV_BUFFER_SIZE 8096
 typedef enum
@@ -675,9 +674,9 @@ void bench_select(const Arguments *args, const HTTPRequest *http_request)
     }
 
     num_connections = args->clients;
-    if (num_connections > MAX_CONNECTIONS)
+    if (num_connections >= FD_SETSIZE)
     {
-        num_connections = MAX_CONNECTIONS;
+        num_connections = FD_SETSIZE - 1;
         printf("Warning: Limited to %d connections to server.\n", num_connections);
     }
 
