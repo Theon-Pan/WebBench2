@@ -120,6 +120,7 @@ static int create_nonblocking_socket(const char *host, const int port)
         sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (-1 == sockfd)
         {
+            rp = rp->ai_next;
             continue; // Try next address.
         }
 

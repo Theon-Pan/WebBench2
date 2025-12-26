@@ -48,6 +48,9 @@ communicator.o: prepare include/communicator.h src/communicator.c
 bench_select.o: prepare include/bench_select.h src/bench_select.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c src/bench_select.c -o $(TARGET_DIR)bench_select.o
 
+bench_poll.o: prepare include/bench_poll.h src/bench_poll.c
+	$(CC) ${CFLAGS} ${INCLUDES} -c src/bench_poll.c -o ${TARGET_DIR}bench_poll.o
+
 webbench2.o: prepare src/webbench2.c include/arguments.h include/request.h include/bench2.h include/bench_select.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c src/webbench2.c -o $(TARGET_DIR)webbench2.o
 	@echo "Compiled webbench2.o successfully."
