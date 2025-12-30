@@ -6,6 +6,42 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <stdbool.h>
+
+#define BUFFER_SIZE 1024
+#define RECV_BUFFER_SIZE 8096
+typedef enum
+{
+    CONN_IDLE,
+    CONN_CONNECTING,
+    CONN_PROXY_CONNECT,
+    CONN_PROXY_RESPONSE,
+    CONN_TLS_HANDSHAKE,
+    CONN_SENDING,
+    CONN_RECEIVING,
+    CONN_COMPLETED,
+    CONN_ERROR
+} connection_state;
+
+typedef struct
+{
+    connection_state state;
+    int sockfd;
+    SSL_CTX *ssl_context;
+    SSL *ssl;
+    bool is_https;
+    const HTTPRequest *request;
+    char received_response[RECV_BUFFER_SIZE];
+    int request_len;
+    int force_flag;
+    int bytes_sent;
+    int bytes_received;
+    int speed;
+    int failed;
+    int bytes;
+} connection;
 
 static int create_nonblocking_socket(const char *host, const int port)
 {
