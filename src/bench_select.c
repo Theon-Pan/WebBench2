@@ -76,7 +76,7 @@ static void cleanup_ssl(void)
     if (global_ssl_ctx != NULL)
     {
         SSL_CTX_free(global_ssl_ctx);
-
+        global_ssl_ctx = NULL;
     }
     // Cleanup OpenSSL
     EVP_cleanup();                // Free algorithm tables.
@@ -159,25 +159,25 @@ static bool need_connect_proxy(const Arguments *args)
 
 static int send_proxy_connect(connection *conn, const char *proxy_host, const int proxy_port, const char *target_host, const int target_port)
 {
-    char connect_request[BUFFER_SIZE] = {0};
     if (0 == strlen(proxy_host) || 0 == strlen(target_host))
     {
         fprintf(stderr, "No proxy or target host specified.\n");
         return -1;
     }
-
+    
     if (proxy_port <= 0 || proxy_port > 65535 || target_port <= 0 || target_port > 65535)
     {
         fprintf(stderr, "Illegal proxy or target port number.\n");
         return -1;
     }
-
-    if (conn->sockfd < 0)
+    
+    if (conn == NULL || conn->sockfd < 0)
     {
-        fprintf(stderr, "No socket ready.\n");
+        fprintf(stderr, "No connection or socket is ready.\n");
         return -1;
     }
-
+    
+    char connect_request[BUFFER_SIZE] = {0};
     // Construct CONNECT request body and send it to establish the connection between client and proxy.
     snprintf(connect_request, sizeof(connect_request),
              "CONNECT %s:%d HTTP/1.1\r\n"
@@ -229,6 +229,7 @@ static void init_connection(const Arguments *args, const HTTPRequest *http_reque
     if (NULL == args || NULL == http_request || NULL == conn)
     {
         fprintf(stderr, "NULL args for calling init_connection.\n");
+        return;
     }
 
     *conn = (connection){0};
@@ -287,6 +288,7 @@ static void cleanup_connection(connection *conn)
     conn->state = CONN_IDLE;
     conn->bytes_sent = 0;
     conn->bytes_received = 0;
+    memset(conn->received_response, 0, sizeof(conn->reveived_response));
 }
 
 static void setup_connection_fdsets(connection *conn, fd_set *read_fds, fd_set *write_fds, int *max_fd)
@@ -666,7 +668,7 @@ void bench_select(const Arguments *args, const HTTPRequest *http_request)
     time_t start_time = time(NULL);
     fd_set read_fds, write_fds;
     int max_fd = 0;
-    struct timeval select_timeout = {0, 100000}; // 100ms timeout
+    struct timeval select_timeout = {0, 10000}; // 100ms timeout
 
     if (NULL == args || NULL == http_request)
     {
@@ -752,7 +754,10 @@ void bench_select(const Arguments *args, const HTTPRequest *http_request)
         }
         free(connections);
     }
-    cleanup_ssl();
+    if (args->protocol == PROTOCOL_HTTPS)
+    {
+        cleanup_ssl();
+    }
 
     printf("Bench select is done. speed=[%d], bytes=[%d], failed=[%d].\n", total_speed, total_bytes, total_failed);
     

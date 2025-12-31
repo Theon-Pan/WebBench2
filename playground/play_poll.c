@@ -68,6 +68,8 @@ int create_nonblocking_socket(const char *host, const char *service)
         break;
     }
     
+    freeaddrinfo(result);
+    
     if (rp == NULL && sockfd == -1){
         fprintf(stderr, "Cannot connect to %s with service %s.\n", host, service);
         return -1;
