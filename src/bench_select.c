@@ -288,7 +288,7 @@ static void cleanup_connection(connection *conn)
     conn->state = CONN_IDLE;
     conn->bytes_sent = 0;
     conn->bytes_received = 0;
-    memset(conn->received_response, 0, sizeof(conn->reveived_response));
+    memset(conn->received_response, 0, sizeof(conn->received_response));
 }
 
 static void setup_connection_fdsets(connection *conn, fd_set *read_fds, fd_set *write_fds, int *max_fd)
