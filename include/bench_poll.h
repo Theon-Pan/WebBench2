@@ -4,6 +4,8 @@
 #include "arguments.h"
 #include "request.h"
 
-void bench_poll(Arguments *args, HTTPRequest *http_request);
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
+
+void bench_poll(const Arguments *args, const HTTPRequest *http_request);
 
 #endif

@@ -9,11 +9,14 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <stdbool.h>
+#include <poll.h>
 
 #define MAX_PORT 65535
 
 #define BUFFER_SIZE 1024
 #define RECV_BUFFER_SIZE 8096
+
+#define MAX_CONNECTIONS 1000
 typedef enum
 {
     CONN_IDLE,
@@ -357,5 +360,138 @@ static void cleanup_connection(connection *conn)
         conn->bytes_received = 0;
         memset(conn->received_response, 0, sizeof(conn->received_response));
     }
+}
+
+static int setup_connection_fdsets(connection *conn, const int num_connections, const Arguments *args, const HTTPRequest *http_request, struct pollfd *poll_fd)
+{
+    if (NULL == conn || NULL == conn->sockfd || conn->sockfd <= 0)
+    {
+        return -1;
+    }
+
+    if (NULL == args || NULL == http_request)
+    {
+        return -1;
+    }
+
+    if (NULL == poll_fd)
+    {
+        return -1;
+    }
+
+    connection *curr_conn = conn;
+    struct pollfd *curr_poll_fd = poll_fd;
+    int poll_fds_num = 0;
+    for (int i = 0; i < num_connections; i++)
+    {
+        switch(curr_conn->state)
+        {
+            case CONN_ERROR:
+            case CONN_COMPLETED:
+                cleanup_connection(curr_conn);
+                allocate_socket(args, http_request, curr_conn);
+                break;
+            case CONN_CONNECTING:
+            case CONN_SENDING:
+            case CONN_PROXY_CONNECT:
+                curr_poll_fd->fd = curr_conn->sockfd;
+                curr_poll_fd->events = POLLOUT;
+                curr_poll_fd->revents = 0;
+                curr_poll_fd ++;
+                poll_fds_num ++;
+                break;
+            case CONN_RECEIVING:
+            case CONN_PROXY_RESPONSE:
+                curr_poll_fd->fd = curr_conn->sockfd;
+                curr_poll_fd->events = POLLIN;
+                curr_poll_fd->revents = 0;
+                curr_poll_fd ++;
+                poll_fds_num ++;
+                break;
+            case CONN_TLS_HANDSHAKE:
+                // For TLS handshake, we might need to read or write
+                // The specific direction depends on SSL_get_error() 's result.
+                curr_poll_fd->fd = curr_conn->sockfd;
+                curr_poll_fd->events = POLLIN | POLLOUT;    // Monitor both directions.
+                curr_poll_fd->revents = 0;
+                curr_poll_fd ++;
+                poll_fds_num ++;
+                break;
+
+        }
+        curr_conn ++;
+    }
+    return poll_fds_num;
+}
+
+void bench_poll(const Arguments *args, const HTTPRequest *http_request)
+{
+    if (NULL == args || NULL == http_request)
+    {
+        fprintf(stderr, "No args or request to bench.\n");
+        return;
+    }
+
+    int num_connections;
+    time_t start_time;
+
+    num_connections = args->clients;
+
+    if (num_connections > MAX_CONNECTIONS)
+    {
+        num_connections = MAX_CONNECTIONS;
+        printf("Warning: Limited to %d connections to server.\n", num_connections);
+    }
+
+    connection *connections =  (connection *) malloc(sizeof(connection) * num_connections);
+    if (NULL == connections)
+    {
+        perror("Memory allocation for connections is failed.");
+        return;
+    }
+
+    printf("Starting to bench with %d connection/connections...\n", num_connections);
+
+    // Initialize all connections.
+    for (int i = 0; i < num_connections; i++)
+    {
+        init_connection(args, http_request, &connections[i]);
+        allocate_socket(args, http_request, &connections[i]);
+    }
+
+    // If the protocol is HTTPS, initialize the SSL library.
+    if (args->protocol == PROTOCOL_HTTPS)
+    {
+        init_ssl_lib();
+    }
+
+
+    // Execute bench within the specified time range.
+    start_time = time(NULL);
+    while (time(NULL) - start_time <= args->bench_time)
+    {
+        struct pollfd pollfds[num_connections];
+
+        // Setup connections to pollfds based on the current state.
+        int poll_fds_num = setup_connection_fdsets(connections, num_connections, args, http_request, pollfds);
+        if (poll_fds_num > 0)
+        {
+            int ready = poll(pollfds, poll_fds_num, 1000);
+            if (ready < 0)
+            {
+                perror("Poll return negetive");
+                break;
+            }
+            if (ready == 0)
+            {
+                // Poll time out, continue the loop.
+                printf("Poll timeout, go next loop...\n");
+                continue;
+            }
+
+            // 
+        }
+    }
+    
 }
 
