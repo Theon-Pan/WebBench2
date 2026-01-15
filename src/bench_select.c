@@ -367,7 +367,19 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                         }
 
                         conn->ssl = SSL_new(conn->ssl_context);
-                        SSL_set_fd(conn->ssl, conn->sockfd);
+                        if (NULL == conn->ssl)
+                        {
+                            conn->state = CONN_ERROR;
+                            conn->failed++;
+                            return -1;
+                        }
+                        if (0 == SSL_set_fd(conn->ssl, conn->sockfd))
+                        {
+                            conn->state = CONN_ERROR;
+                            conn->failed++;
+                            return -1;
+                        }
+
                         SSL_set_tlsext_host_name(conn->ssl, args->target_host);
                     }
                 }
@@ -391,7 +403,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
             }
             else if (sent == 0)
             {
-                // Do not mean failed, just continue to sent request on next select.
+                // Do not mean failed, just continue to send request in next select.
                 return 0;
             }
             else
@@ -425,7 +437,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
             }
             else if (result == 0)
             {
-                // Do not mean failed, just continue to receive on next select.
+                // Do not mean failed, just continue to receive in next select.
                 return 0;
             }
             else
@@ -451,7 +463,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                 int ssl_error = SSL_get_error(conn->ssl, ssl_result);
                 if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE)
                 {
-                    // Continue handshake on next select.
+                    // Continue handshake in next select.
                     return 0;
                 }
                 else
@@ -500,7 +512,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                             int ssl_error = SSL_get_error(conn->ssl, bytes_written);
                             if (ssl_error == SSL_ERROR_WANT_WRITE || ssl_error == SSL_ERROR_WANT_READ)
                             {
-                                // SSL wants to write/read more, try again on the next select.
+                                // SSL wants to write/read more, try again in the next select.
                                 return 0;
                             }
                             else
@@ -537,7 +549,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                     }
                     else if (bytes_written == -1 && ( errno == EAGAIN || errno == EWOULDBLOCK))
                     {
-                        // Socket not ready, try again on the next select.
+                        // Socket not ready, try again in the next select.
                         return 0;
                     }
                     else
@@ -562,99 +574,101 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                 conn->state = CONN_COMPLETED;
                 conn->speed ++;
             }
-            if (conn->is_https)
+            else
             {
-                if (conn->ssl)
+                if (conn->is_https)
                 {
-                    // HTTPS connection.
-                    bytes_read = SSL_read(conn->ssl, conn->received_response + conn->bytes_received, remaining_recv);
+                    if (conn->ssl)
+                    {
+                        // HTTPS connection.
+                        bytes_read = SSL_read(conn->ssl, conn->received_response + conn->bytes_received, remaining_recv);
+                        if (bytes_read > 0)
+                        {
+                            conn->bytes_received += bytes_read;
+                            conn->received_response[conn->bytes_received] = '\0';
+    
+                            // Check for the end of HTTP headers.
+                            if (strstr(conn->received_response, "\r\n\r\n"))
+                            {
+                                // Headers complete.
+                                printf("%d bytes of response received.[%s]\n", conn->bytes_received, conn->received_response);
+                                conn->state = CONN_COMPLETED;
+                                conn->bytes += conn->bytes_received;
+                                conn->speed ++;
+                            }
+                            else
+                            {
+                                // Continue to read.
+                                return 0;
+                            }
+                        }
+                        else 
+                        {
+                            int ssl_error = SSL_get_error(conn->ssl, bytes_read);
+                            if (ssl_error == SSL_ERROR_WANT_WRITE || ssl_error == SSL_ERROR_WANT_READ)
+                            {
+                                // SSL wants to read or write more, try again in the next select.
+                                return 0;
+                            }
+                            else
+                            {
+                                // Real error occurred.
+                                fprintf(stderr, "Bench response received failed.\n");
+                                conn->state = CONN_ERROR;
+                                conn->failed ++;
+                                return -1;
+                            }
+                        }
+    
+                    }
+                    else
+                    {
+                        printf("Bench request received failed.\n");
+                        conn->state = CONN_ERROR;
+                        conn->failed ++;
+                        return -1;
+                    }
+    
+                }
+                else
+                {
+                    // HTTP connection.
+                    bytes_read = recv(conn->sockfd, conn->received_response + conn->bytes_received, remaining_recv, 0);
                     if (bytes_read > 0)
                     {
                         conn->bytes_received += bytes_read;
                         conn->received_response[conn->bytes_received] = '\0';
-
-                        // Check for the end of HTTP headers.
+    
+                        // Check if meeting the end of HTTP headers.
                         if (strstr(conn->received_response, "\r\n\r\n"))
                         {
-                            // Headers complete.
-                            printf("%d bytes of response received.[%s]\n", conn->bytes_received, conn->received_response);
+                            printf("%d bytes of response received.\n", conn->bytes_received);
+                            // Headers received completly.
                             conn->state = CONN_COMPLETED;
                             conn->bytes += conn->bytes_received;
                             conn->speed ++;
                         }
                         else
                         {
-                            // Continue to read.
+                            // Continue to read on the next select.
                             return 0;
                         }
                     }
-                    else 
+                    else if (bytes_read == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
                     {
-                        int ssl_error = SSL_get_error(conn->ssl, bytes_read);
-                        if (ssl_error == SSL_ERROR_WANT_WRITE || ssl_error == SSL_ERROR_WANT_READ)
-                        {
-                            // SSL wants to read or write more, try again on the next select.
-                            return 0;
-                        }
-                        else
-                        {
-                            // Real error occurred.
-                            printf("Bench response received failed.\n");
-                            conn->state = CONN_ERROR;
-                            conn->failed ++;
-                            return -1;
-                        }
-                    }
-
-                }
-                else
-                {
-                    printf("Bench request received failed.\n");
-                    conn->state = CONN_ERROR;
-                    conn->failed ++;
-                    return -1;
-                }
-
-            }
-            else
-            {
-                // HTTP connection.
-                bytes_read = recv(conn->sockfd, conn->received_response + conn->bytes_received, remaining_recv, 0);
-                if (bytes_read > 0)
-                {
-                    conn->bytes_received += bytes_read;
-                    conn->received_response[conn->bytes_received] = '\0';
-
-                    // Check if meeting the end of HTTP headers.
-                    if (strstr(conn->received_response, "\r\n\r\n"))
-                    {
-                        printf("%d bytes of response received.\n", conn->bytes_received);
-                        // Headers received completly.
-                        conn->state = CONN_COMPLETED;
-                        conn->bytes += conn->bytes_received;
-                        conn->speed ++;
+                        // Socket not ready, try again in the next select.
+                        return 0;
                     }
                     else
                     {
-                        // Continue to read on the next select.
-                        return 0;
+                        // Real error occurred.
+                        fprintf(stderr, "Bench response receiving is failed.\n");
+                        conn->state = CONN_ERROR;
+                        conn->failed ++;
+                        return -1;
                     }
                 }
-                else if (bytes_read == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
-                {
-                    // Socket not ready, try again on the next select.
-                    return 0;
-                }
-                else
-                {
-                    // Real error occurred.
-                    printf("%d bytes of response received.\n", conn->bytes_received);
-                    conn->state = CONN_ERROR;
-                    conn->failed ++;
-                    return -1;
-                }
             }
-
         }
         break;
     }
