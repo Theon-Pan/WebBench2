@@ -613,7 +613,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                             else
                             {
                                 // Real error occurred.
-                                fprintf(stderr, "Bench response received failed.\n");
+                                fprintf(stderr, "Bench response receiving is failed.\n");
                                 conn->state = CONN_ERROR;
                                 conn->failed ++;
                                 return -1;
@@ -623,7 +623,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                     }
                     else
                     {
-                        printf("Bench request received failed.\n");
+                        fprintf(stderr, "Bench response receiving is failed.\n");
                         conn->state = CONN_ERROR;
                         conn->failed ++;
                         return -1;
