@@ -682,7 +682,7 @@ void bench_select(const Arguments *args, const HTTPRequest *http_request)
     time_t start_time = time(NULL);
     fd_set read_fds, write_fds;
     int max_fd = 0;
-    struct timeval select_timeout = {0, 10000}; // 100ms timeout
+    struct timeval select_timeout = {0, 100000}; // 100ms timeout
 
     if (NULL == args || NULL == http_request)
     {
@@ -735,6 +735,10 @@ void bench_select(const Arguments *args, const HTTPRequest *http_request)
                 cleanup_connection(&connections[i]);
                 allocate_socket(args, http_request, &connections[i]);
             }
+            // if (connections[i].state == CONN_COMPLETED)
+            // {
+            //     connections[i].state = CONN_SENDING;
+            // }
             setup_connection_fdsets(&connections[i], &read_fds, &write_fds, &max_fd);
         }
 
@@ -751,6 +755,8 @@ void bench_select(const Arguments *args, const HTTPRequest *http_request)
                 }
             }
         }
+        
+        usleep(10000);
     }
     
     // Release all sockets, ssl and ssl context, free the memory for connections array, summary the results.

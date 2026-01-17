@@ -1,4 +1,5 @@
 #include "bench_poll.h"
+#include "bitmap.h"
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -10,6 +11,7 @@
 #include <openssl/err.h>
 #include <stdbool.h>
 #include <poll.h>
+#include <string.h>
 
 #define MAX_PORT 65535
 
@@ -390,7 +392,7 @@ static void cleanup_connection(connection *conn)
     }
 }
 
-static int setup_connection_fdsets(connection *conn, const int num_connections, const Arguments *args, const HTTPRequest *http_request, struct pollfd *poll_fd)
+static int setup_connection_fdsets(connection *conn, const int num_connections, const Arguments *args, const HTTPRequest *http_request, struct pollfd *poll_fd, char *conn_setup_bitmap, int bitmap_size)
 {
     if (NULL == conn || conn->sockfd <= 0)
     {
@@ -403,6 +405,11 @@ static int setup_connection_fdsets(connection *conn, const int num_connections, 
     }
 
     if (NULL == poll_fd)
+    {
+        return -1;
+    }
+
+    if (NULL == conn_setup_bitmap || bitmap_size <= 0)
     {
         return -1;
     }
@@ -422,6 +429,10 @@ static int setup_connection_fdsets(connection *conn, const int num_connections, 
             case CONN_CONNECTING:
             case CONN_SENDING:
             case CONN_PROXY_CONNECT:
+                if (set_bitmap(i, conn_setup_bitmap, bitmap_size) < 0)
+                {
+                    return -1;
+                }
                 curr_poll_fd->fd = curr_conn->sockfd;
                 curr_poll_fd->events = POLLOUT;
                 curr_poll_fd->revents = 0;
@@ -430,6 +441,10 @@ static int setup_connection_fdsets(connection *conn, const int num_connections, 
                 break;
             case CONN_RECEIVING:
             case CONN_PROXY_RESPONSE:
+                if (set_bitmap(i, conn_setup_bitmap, bitmap_size) < 0)
+                {
+                    return -1;
+                }
                 curr_poll_fd->fd = curr_conn->sockfd;
                 curr_poll_fd->events = POLLIN;
                 curr_poll_fd->revents = 0;
@@ -439,6 +454,10 @@ static int setup_connection_fdsets(connection *conn, const int num_connections, 
             case CONN_TLS_HANDSHAKE:
                 // For TLS handshake, we might need to read or write
                 // The specific direction depends on SSL_get_error() 's result.
+                if (set_bitmap(i, conn_setup_bitmap, sizeof(conn_setup_bitmap)) < 0)
+                {
+                    return -1;
+                }
                 curr_poll_fd->fd = curr_conn->sockfd;
                 curr_poll_fd->events = POLLIN | POLLOUT;    // Monitor both directions.
                 curr_poll_fd->revents = 0;
@@ -825,15 +844,25 @@ void bench_poll(const Arguments *args, const HTTPRequest *http_request)
 
     // Execute bench within the specified time range.
     start_time = time(NULL);
+
+    // Setup bitmap for tracking which connection is set in te poll fds array.
+    unsigned short bitmap_size = num_connections / (sizeof(char) * 8);
+    if (num_connections % (sizeof(char) * 8) != 0)
+    {
+        bitmap_size += 1;
+    }
+
+    char bitmap[bitmap_size];
     while (time(NULL) - start_time <= args->bench_time)
     {
         struct pollfd pollfds[num_connections];
 
         // Setup connections to pollfds based on the current state.
-        int poll_fds_num = setup_connection_fdsets(connections, num_connections, args, http_request, pollfds);
+        memset(bitmap, 0, bitmap_size);
+        int poll_fds_num = setup_connection_fdsets(connections, num_connections, args, http_request, pollfds, bitmap, bitmap_size);
         if (poll_fds_num > 0)
         {
-            int ready = poll(pollfds, poll_fds_num, 1000);
+            int ready = poll(pollfds, poll_fds_num, 100);
             if (ready < 0)
             {
                 perror("Poll return negetive");
@@ -852,17 +881,16 @@ void bench_poll(const Arguments *args, const HTTPRequest *http_request)
             for (int i = 0; i < num_connections; i++)
             {
                 // Find the corresponding connection for this pollfd.
-                for (int j = 0; j < poll_fds_num; j++)
+                if (get_bitmap(i, bitmap, bitmap_size))
                 {
-                    if (curr_conn->sockfd == curr_poll_fd->fd)
-                    {
-                        handle_ready_connection(curr_conn, args, curr_poll_fd);
-                    }
+                    handle_ready_connection(curr_conn, args, curr_poll_fd);
+            
                     curr_poll_fd++;
                 }
                 curr_conn++;
             }
         }
+        usleep(10000);
     }
 
     // Release all connections, ssl and ssl context, free the memory allocated for connections array, summary the results.

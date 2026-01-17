@@ -4,6 +4,7 @@
 #include "bench_select.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <bench_poll.h>
 
 int main(int argc, char *argv[])
 {
@@ -25,5 +26,6 @@ int main(int argc, char *argv[])
     // bench(&args, &http_request);
     // bench_with_no_racing(&args, &http_request);
 
-    bench_select(&args, &http_request);
+    // bench_select(&args, &http_request);
+    bench_poll(&args, &http_request);
 }

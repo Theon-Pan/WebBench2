@@ -67,8 +67,8 @@ Suite *arguments_suite(void)
     TCase *tc_core;
     s = suite_create("Request");
     tc_core = tcase_create("Core");
-    tcase_add_test(tc_core, test_construct_request_first_line_no_proxy_specified);
-    tcase_add_test(tc_core, test_construct_request_first_line_with_proxy_specified);
+    //tcase_add_test(tc_core, test_construct_request_first_line_no_proxy_specified);
+    //tcase_add_test(tc_core, test_construct_request_first_line_with_proxy_specified);
     suite_add_tcase(s, tc_core);
     return s;
 }

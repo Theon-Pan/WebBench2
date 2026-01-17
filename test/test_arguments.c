@@ -168,7 +168,7 @@ Suite *arguments_suite(void)
     tcase_add_test(tc_core, test_proxy_server_str_default_port_1);
     tcase_add_test(tc_core, test_proxy_server_str_normal_format);
     tcase_add_test(tc_core, test_legal_http_method);
-    // tcase_add_test(tc_core, test_illegal_http_method);
+    //tcase_add_test(tc_core, test_illegal_http_method);
     tcase_add_test(tc_core, test_url_contains_target_host_and_port);
     suite_add_tcase(s, tc_core);
     return s;

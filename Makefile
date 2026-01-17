@@ -27,11 +27,18 @@ test_request: test_request.o request.o arguments.o
 	$(CC) $(CFLAGS) $(INCLUDES) -o $(TARGET_TEST_DIR)test_request $(TARGET_DIR)request.o $(TARGET_DIR)arguments.o $(TARGET_TEST_DIR)test_request.o $(TEST_LIBS)
 	$(TARGET_TEST_DIR)test_request
 
+test_bitmap: test_bitmap.o bitmap.o
+	$(CC) $(CFLAGS) $(INCLUDES) -o $(TARGET_TEST_DIR)test_bitmap $(TARGET_DIR)bitmap.o $(TARGET_TEST_DIR)test_bitmap.o $(TEST_LIBS)
+	$(TARGET_TEST_DIR)test_bitmap
+
 test_arguments.o: test/test_arguments.c include/arguments.h
 	$(CC) $(CFLAGS) $(INCLUDES) -o ${TARGET_TEST_DIR}test_arguments.o -c test/test_arguments.c $(TEST_LIBS)
 
 test_request.o: test/test_request.c include/request.h include/arguments.h
-	$(CC) $(CFLAGS) $(INCLUDES) -o ${TARGET_TEST_DIR}test_request.o -c test/test_request.c ${TEST_LIBS}
+	$(CC) $(CFLAGS) $(INCLUDES) -o ${TARGET_TEST_DIR}test_request.o -c test/test_request.c $(TEST_LIBS)
+
+test_bitmap.o: test/test_bitmap.c include/bitmap.h
+	$(CC) $(CFLAGS) $(INCLUDES) -o $(TARGET_TEST_DIR)test_bitmap.o -c test/test_bitmap.c $(TEST_LIBS)
 
 arguments.o: prepare include/arguments.h src/arguments.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c src/arguments.c -o $(TARGET_DIR)arguments.o
@@ -51,12 +58,15 @@ bench_select.o: prepare include/bench_select.h src/bench_select.c
 bench_poll.o: prepare include/bench_poll.h src/bench_poll.c
 	$(CC) ${CFLAGS} ${INCLUDES} -c src/bench_poll.c -o ${TARGET_DIR}bench_poll.o
 
+bitmap.o: prepare include/bitmap.h src/bitmap.c
+	$(CC) $(CFLAGS) $(INCLUDES) -c src/bitmap.c -o ${TARGET_DIR}bitmap.o
+
 webbench2.o: prepare src/webbench2.c include/arguments.h include/request.h include/bench2.h include/bench_select.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c src/webbench2.c -o $(TARGET_DIR)webbench2.o
 	@echo "Compiled webbench2.o successfully."
 
-$(TARGET): prepare test_arguments test_request webbench2.o arguments.o request.o bench2.o communicator.o bench_select.o
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $(TARGET_DIR)$(TARGET) $(TARGET_DIR)webbench2.o $(TARGET_DIR)arguments.o $(TARGET_DIR)request.o $(TARGET_DIR)bench2.o $(TARGET_DIR)communicator.o $(TARGET_DIR)bench_select.o $(LIBS)
+$(TARGET): prepare test_arguments test_request test_bitmap webbench2.o arguments.o request.o bench2.o communicator.o bench_select.o bench_poll.o bitmap.o
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(TARGET_DIR)$(TARGET) $(TARGET_DIR)webbench2.o $(TARGET_DIR)arguments.o $(TARGET_DIR)request.o $(TARGET_DIR)bench2.o $(TARGET_DIR)communicator.o $(TARGET_DIR)bench_select.o $(TARGET_DIR)bench_poll.o $(TARGET_DIR)bitmap.o $(LIBS)
 	@echo "WebBench 2 compiled successfully."
 
 debug: CFLAGS += -DDEBUG -O0
