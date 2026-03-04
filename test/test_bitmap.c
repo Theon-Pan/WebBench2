@@ -1,4 +1,6 @@
 #include <check.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "bitmap.h"
 
 START_TEST(test_set_and_get_bitmap)
@@ -11,6 +13,8 @@ START_TEST(test_set_and_get_bitmap)
     }
 
     char bitmap[bytes_needed];
+    // char *bitmap = calloc(bytes_needed, sizeof(char));
+    ck_assert_ptr_nonnull(bitmap);
     memset(bitmap, 0, bytes_needed);
 
     ck_assert_int_eq(sizeof(bitmap), 8);
@@ -19,7 +23,9 @@ START_TEST(test_set_and_get_bitmap)
     set_bitmap(position, bitmap, sizeof(bitmap));
 
     int result = get_bitmap(position, bitmap, sizeof(bitmap));
+    printf("%d\n", result);
     ck_assert_int_eq(result, 1);
+    // free(bitmap);
 
 }
 

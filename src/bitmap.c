@@ -9,8 +9,8 @@ int set_bitmap(const unsigned short position, char *bitmap, int bitmap_size)
         return -1;
     }
 
-    unsigned short array_index = position / sizeof(char);
-    unsigned short offset = position % sizeof(char);
+    unsigned short array_index = position / 8;
+    unsigned short offset = position % 8;
 
     char mask = 0x80 >> offset;
     bitmap[array_index] |= mask;
@@ -26,8 +26,8 @@ int get_bitmap(const unsigned short position, char *bitmap, int bitmap_size)
         return -1;
     }
 
-    unsigned short array_index = position / sizeof(char);
-    unsigned short offset = position % sizeof(char);
+    unsigned short array_index = position / 8;
+    unsigned short offset = position % 8;
 
     char mask = 0x80 >> offset;
     if ((bitmap[array_index] & mask) == 0)

@@ -214,7 +214,7 @@ static int send_proxy_connect(connection *conn, const char *proxy_host, const in
     
     char connect_request[BUFFER_SIZE] = {0};
 
-    // Construct CONNECT request body and sent it to remote proxy server to establish the connection between client and proxy.
+    // Construct CONNECT request body and send it to remote proxy server to establish the connection between client and proxy.
     snprintf(connect_request, sizeof(connect_request), 
             "CONNECT %s:%d HTTP/1.1\r\n"
             "Host: %s:%d\r\n"
@@ -394,7 +394,7 @@ static void cleanup_connection(connection *conn)
 
 static int setup_connection_fdsets(connection *conn, const int num_connections, const Arguments *args, const HTTPRequest *http_request, struct pollfd *poll_fd, char *conn_setup_bitmap, int bitmap_size)
 {
-    if (NULL == conn || conn->sockfd <= 0)
+    if (NULL == conn || conn->sockfd < 0)
     {
         return -1;
     }
@@ -845,7 +845,7 @@ void bench_poll(const Arguments *args, const HTTPRequest *http_request)
     // Execute bench within the specified time range.
     start_time = time(NULL);
 
-    // Setup bitmap for tracking which connection is set in te poll fds array.
+    // Setup bitmap for tracking which connection is set in the poll fds array.
     unsigned short bitmap_size = num_connections / (sizeof(char) * 8);
     if (num_connections % (sizeof(char) * 8) != 0)
     {
