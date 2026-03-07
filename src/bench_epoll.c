@@ -200,7 +200,7 @@ static int handle_proxy_response(connection *conn)
     if (remaining <= 0)
     {
         conn->received_response[sizeof(conn->received_response) - 1] = '\0';
-        if (strstr(conn->received_response, "HTTP/1.1 Connection established") == NULL)
+        if (strstr(conn->received_response, "HTTP/1.1 200 Connection established") == NULL)
         {
             // Means the CONNECT request is denied or failed.
             return -1;
@@ -221,7 +221,7 @@ static int handle_proxy_response(connection *conn)
     {
         conn->bytes_received += bytes_received;
         conn->received_response[conn->bytes_received] = '\0';
-        if(strstr(conn->received_response, "HTTP/1.1 Connection established"))
+        if(strstr(conn->received_response, "HTTP/1.1 200 Connection established"))
         {
             // The CONNECT request is responded by proxy successfully.
             // Reset the receive buffer.
@@ -436,8 +436,11 @@ static int setup_connection_to_epoll_instance(connection *conn, const int num_co
                 event.events = EPOLLOUT | EPOLLET;
                 if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, curr_conn->sockfd, &event) == -1)
                 {
-                    perror("epoll_ctl ADD");
-                    continue;
+                    if (errno != EEXIST)
+                    {
+                        perror("OUT: epoll_ctl ADD");
+                        return -1;
+                    }
                 }
                 epoll_fds_num++;
                 break;
@@ -447,8 +450,11 @@ static int setup_connection_to_epoll_instance(connection *conn, const int num_co
                 event.events = EPOLLIN | EPOLLET;
                 if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, curr_conn->sockfd, &event) == -1)
                 {
-                    perror("epoll_ctl ADD");
-                    continue;
+                    if (errno != EEXIST)
+                    {
+                        perror("IN: epoll_ctl ADD");
+                        return -1;
+                    }
                 }
                 epoll_fds_num++;
                 break;
@@ -458,8 +464,11 @@ static int setup_connection_to_epoll_instance(connection *conn, const int num_co
                 event.events = EPOLLIN | EPOLLOUT | EPOLLET;
                 if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, curr_conn->sockfd, &event) == -1)
                 {
-                    perror("epoll_ctl ADD");
-                    continue;
+                    if (errno != EEXIST)
+                    {
+                        perror("TLS_HANDSHAKE: epoll_ctl ADD");
+                        return -1;
+                    }
                 }
                 epoll_fds_num++;
                 break;
@@ -481,7 +490,11 @@ static int handle_ready_connection(const Arguments *args, const struct epoll_eve
     uint32_t ev = event->events;
 
     // Remove from epoll (will be re-added next iterationif needed)
-    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, conn->sockfd, NULL);
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, conn->sockfd, NULL) == -1)
+    {
+        perror("epoll_ctl DEL failed.");
+        return -1;
+    }
 
     // If the event is Error.
     if (ev & (EPOLLERR | EPOLLHUP))
@@ -498,6 +511,7 @@ static int handle_ready_connection(const Arguments *args, const struct epoll_eve
             if (ev & EPOLLOUT)
             {
                 // Because it's non-block socket so before using it, check if it's really ready.
+                printf("Begin to connect...\n");
                 int error = 0;
                 socklen_t len = sizeof(error);
                 if (getsockopt(conn->sockfd, SOL_SOCKET, SO_ERROR, &error, &len) == 0 && error == 0)
@@ -540,10 +554,11 @@ static int handle_ready_connection(const Arguments *args, const struct epoll_eve
         case CONN_PROXY_CONNECT:
             if (ev & EPOLLOUT)
             {
-                printf("Begin to establish SSL tunnel.\n");
+                printf("Begin to establish SSL tunnel...\n");
                 int sent = send_proxy_connect(conn, args->proxy_host, args->proxy_port, args->target_host, args->target_port);
                 if (sent > 0)
                 {
+                    printf("CONNECT request is sent to proxy, waiting for its response...\n");
                     conn->state = CONN_PROXY_RESPONSE;
                 }
                 else if (0 == sent)
@@ -615,8 +630,194 @@ static int handle_ready_connection(const Arguments *args, const struct epoll_eve
                 }
             }
             break;
+        case CONN_SENDING:
+            if (ev & EPOLLOUT)
+            {
+                printf("Begin to send bench request...\n");
+                int remaining = conn->request_len - conn->bytes_sent;
+                if (remaining <= 0)
+                {
+                    // The whole request has benn sent.
+                    printf("%ld bytes of bench request has been sent.\n[%s]\n", conn->request_len, conn->request->body);
+                    conn->state = conn->force_flag ? CONN_COMPLETED : CONN_RECEIVING;
+                }   
+                else
+                {
+                    int bytes_written;
+                    if (conn->is_https)
+                    {
+                        // HTTPS connection.
+                        if (conn->ssl)
+                        {
+                            bytes_written = SSL_write(conn->ssl, conn->request->body + conn->bytes_sent, remaining);
+                            if (bytes_written > 0)
+                            {
+                                conn->bytes_sent += bytes_written;
+                                if (conn->bytes_sent >= conn->request_len)
+                                {
+                                    // The whole request has been sent.
+                                    printf("%ld bytes of bench request has benn sent.\n[%s]\n", conn->bytes_sent, conn->request->body);
+                                    conn->state = conn->force_flag ? CONN_COMPLETED : CONN_RECEIVING;
+                                }
+                            }
+                            else
+                            {
+                                // Need to check if it just need to re-try in the next cycle.
+                                int ssl_error = SSL_get_error(conn->ssl, bytes_written);
+                                if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE)
+                                {
+                                    // Just need to re-try in the next cycle.
+                                    return 0;
+                                }
+                                else
+                                {
+                                    // Actual error occurred.
+                                    fprintf(stderr, "Failed to send bench request.\n");
+                                    conn->state = CONN_ERROR;
+                                    conn->failed++;
+                                    return -1;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            fprintf(stderr, "Failed to send bench request due to the failed ssl initialization.\n");
+                            conn->state = CONN_ERROR;
+                            conn->failed++;
+                            return -1;
+                        }
+                    }
+                    else
+                    {
+                        // HTTP connection.
+                        bytes_written = send(conn->sockfd, conn->request->body + conn->bytes_sent, remaining, 0);
+                        if (bytes_written > 0)
+                        {
+                            conn->bytes_sent += bytes_written;
+                            // Check if the whole request data has been sent.
+                            if (conn->bytes_sent >= conn->request_len)
+                            {
+                                printf("%ld bytes of bench request has been sent.\n[%s]\n", conn->bytes_sent, conn->request->body);
+                                conn->state = conn->force_flag ? CONN_COMPLETED : CONN_RECEIVING;
+                            }
+                        }
+                        else if (bytes_written == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
+                        {
+                            // Socket is not ready for writing, try again in the next cycle.
+                            return 0;
+                        }
+                        else
+                        {
+                            // Actual error occurred.
+                            fprintf(stderr, "Failed to send bench request.\n");
+                            conn->state = CONN_ERROR;
+                            conn->failed++;
+                            return -1;
+                        }
+                    }
+                }
+            }
+            break;
+        case CONN_RECEIVING:
+            if (ev & EPOLLIN)
+            {
+                int remaining_recv = sizeof(conn->received_response) - conn->bytes_received - 1;
+                if (remaining_recv <= 0)
+                {
+                    conn->state = CONN_COMPLETED;
+                    conn->speed++;
+                    conn->bytes += conn->bytes_received;
+                }
+                else
+                {
+                    int bytes_read = 0;
+                    if (conn->is_https)
+                    {
+                        bytes_read = SSL_read(conn->ssl, conn->received_response + conn->bytes_received, remaining_recv);
+                        if (bytes_read > 0)
+                        {
+                            conn->bytes_received += bytes_read;
+                            conn->received_response[conn->bytes_received] = '\0';
+
+                            // Check if meets the end of HTTP headers.
+                            if (strstr(conn->received_response, "\r\n\r\n"))
+                            {
+                                // HTTP headers is fully received, complete the connection.
+                                printf("%ld bytes of response is received.\n[%s]\n", conn->bytes_received, conn->received_response);
+                                conn->state = CONN_COMPLETED;
+                                conn->bytes += conn->bytes_received;
+                                conn->speed++;
+                            }
+                            else
+                            {
+                                // Headers is not fully received, continue to receive in the next cycle.
+                                return 0;
+                            }
+                        }
+                        else
+                        {
+                            int ssl_error = SSL_get_error(conn->ssl, bytes_read);
+                            if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE)
+                            {
+                                // Not an actual error, try again in the next cycle.
+                                return 0;
+                            }
+                            else
+                            {
+                                // An actual error occurred.
+                                fprintf(stderr, "Failed to receive bench response.\n");
+                                conn->state = CONN_ERROR;
+                                conn->failed++;
+                                return -1;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // HTTP connection.
+                        bytes_read = read(conn->sockfd, conn->received_response + conn->bytes_received, remaining_recv);
+                        if (bytes_read > 0)
+                        {
+                            conn->bytes_received += bytes_read;
+                            conn->received_response[conn->bytes_received] = '\0';
+
+                            // Check if meets the end of HTTP readers.
+                            if (strstr(conn->received_response, "\r\n\r\n"))
+                            {
+                                // HTTP headers is fully received, complete the connection.
+                                printf("%ld bytes of response is received.\n[%s]\n", conn->bytes_received, conn->received_response);
+                                conn->state = CONN_COMPLETED;
+                                conn->bytes += conn->bytes_received;
+                                conn->speed++;
+                            }
+                            else
+                            {
+                                // HTTP headers is not fully received, continue to receive in the next cycle.
+                                return 0;
+                            }
+                        }
+                        else if (bytes_read == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
+                        {
+                            // Socket is not ready, try again in the next cycle.
+                            return 0;
+                        }
+                        else
+                        {
+                            // Actual error occurred.
+                            fprintf(stderr, "Failed to receive bench response.\n");
+                            conn->state = CONN_ERROR;
+                            conn->failed++;
+                            return -1;
+                        }
+                    }
+                }
+            }
+            break;
+        default:
+            break;
 
     }
+    return 0;
     
 }
 
@@ -676,7 +877,11 @@ void bench_epoll(const Arguments *args, const HTTPRequest *http_request)
     {
         int active_fds = setup_connection_to_epoll_instance(connections, num_connections, args, http_request, epfd);
        
-        if (active_fds <= 0)
+        if (active_fds < 0)
+        {
+            exit(EXIT_FAILURE);
+        }
+        else if (active_fds == 0)
         {
             continue;
         }

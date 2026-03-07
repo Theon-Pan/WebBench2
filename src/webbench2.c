@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <bench_poll.h>
+#include "bench_epoll.h"
 
 int main(int argc, char *argv[])
 {
@@ -27,5 +28,6 @@ int main(int argc, char *argv[])
     // bench_with_no_racing(&args, &http_request);
 
     // bench_select(&args, &http_request);
-    bench_poll(&args, &http_request);
+    // bench_poll(&args, &http_request);
+    bench_epoll(&args, &http_request);
 }

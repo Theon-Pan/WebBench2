@@ -69,7 +69,7 @@ webbench2.o: prepare src/webbench2.c include/arguments.h include/request.h inclu
 	@echo "Compiled webbench2.o successfully."
 
 $(TARGET): prepare test_arguments test_request test_bitmap webbench2.o arguments.o request.o bench2.o communicator.o bench_select.o bench_poll.o bitmap.o bench_epoll.o
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $(TARGET_DIR)$(TARGET) $(TARGET_DIR)webbench2.o $(TARGET_DIR)arguments.o $(TARGET_DIR)request.o $(TARGET_DIR)bench2.o $(TARGET_DIR)communicator.o $(TARGET_DIR)bench_select.o $(TARGET_DIR)bench_poll.o $(TARGET_DIR)bitmap.o $(LIBS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(TARGET_DIR)$(TARGET) $(TARGET_DIR)webbench2.o $(TARGET_DIR)arguments.o $(TARGET_DIR)request.o $(TARGET_DIR)bench2.o $(TARGET_DIR)communicator.o $(TARGET_DIR)bench_select.o $(TARGET_DIR)bench_poll.o $(TARGET_DIR)bitmap.o ${TARGET_DIR}bench_epoll.o $(LIBS)
 	@echo "WebBench 2 compiled successfully."
 
 debug: CFLAGS += -DDEBUG -O0

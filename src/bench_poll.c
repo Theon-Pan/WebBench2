@@ -661,7 +661,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, stru
                         }
                         else
                         {
-                            fprintf(stderr, "Bench request sent failed.\n");
+                            fprintf(stderr, "Failed to send bench request sue to the failed ssl initialization.\n");
                             conn->state = CONN_ERROR;
                             conn->failed++;
                             return -1;
@@ -706,6 +706,7 @@ static int handle_ready_connection(connection *conn, const Arguments *args, stru
                 {
                     conn->state = CONN_COMPLETED;
                     conn->speed++;
+                    conn->bytes += conn->bytes_received;
                 }
                 else
                 {
