@@ -40,6 +40,7 @@ typedef struct
     int force_flag;
     size_t bytes_sent;
     size_t bytes_received;
+    time_t receiving_start;
     int speed;
     int failed;
     int bytes;
@@ -340,6 +341,7 @@ static int init_connection(const Arguments *args, const HTTPRequest *http_reques
     conn->bytes = 0;
     conn->request = http_request;
     conn->request_len = strlen(http_request->body);
+    conn->receiving_start = 0;
     conn->bytes_sent = 0;
     conn->bytes_received = 0;
     return 1;
@@ -365,6 +367,7 @@ static void cleanup_connection(connection *conn)
         conn->state = CONN_IDLE;
         conn->bytes_sent = 0;
         conn->bytes_received = 0;
+        conn->receiving_start = 0;
         memset(conn->received_response, 0, sizeof(conn->received_response));
     }
 }
@@ -640,6 +643,12 @@ static int handle_ready_connection(const Arguments *args, const struct epoll_eve
                     // The whole request has benn sent.
                     printf("%ld bytes of bench request has been sent.\n[%s]\n", conn->request_len, conn->request->body);
                     conn->state = conn->force_flag ? CONN_COMPLETED : CONN_RECEIVING;
+                    if (conn->state == CONN_COMPLETED)
+                    {
+                        conn->speed++;
+                    }
+                    // for receiving timeout.
+                    conn->receiving_start = time(NULL);
                 }   
                 else
                 {
@@ -658,6 +667,12 @@ static int handle_ready_connection(const Arguments *args, const struct epoll_eve
                                     // The whole request has been sent.
                                     printf("%ld bytes of bench request has benn sent.\n[%s]\n", conn->bytes_sent, conn->request->body);
                                     conn->state = conn->force_flag ? CONN_COMPLETED : CONN_RECEIVING;
+                                    if (conn->state == CONN_COMPLETED)
+                                    {
+                                        conn->speed++;
+                                    }
+                                    // for receiving timeout.
+                                    conn->receiving_start = time(NULL);
                                 }
                             }
                             else
@@ -699,6 +714,12 @@ static int handle_ready_connection(const Arguments *args, const struct epoll_eve
                             {
                                 printf("%ld bytes of bench request has been sent.\n[%s]\n", conn->bytes_sent, conn->request->body);
                                 conn->state = conn->force_flag ? CONN_COMPLETED : CONN_RECEIVING;
+                                if (conn->state == CONN_COMPLETED)
+                                {
+                                    conn->speed++;
+                                }
+                                // for receiving timeout.
+                                conn->receiving_start = time(NULL);
                             }
                         }
                         else if (bytes_written == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
@@ -750,8 +771,21 @@ static int handle_ready_connection(const Arguments *args, const struct epoll_eve
                             }
                             else
                             {
-                                // Headers is not fully received, continue to receive in the next cycle.
-                                return 0;
+                                // Receiving timeout.
+                                // TODO: set timeout by the argument user specified.
+                                if (time(NULL) - conn->receiving_start >= 1000)
+                                {
+                                    // Treat timeout as failed.
+                                    fprintf(stderr, "Receiving bench response is time-out.\n");
+                                    conn->state = CONN_ERROR;
+                                    conn->failed++;
+                                    return -1;
+                                }
+                                else
+                                {
+                                    // Headers is not fully received, continue to receive in the next cycle.
+                                    return 0;
+                                }
                             }
                         }
                         else
@@ -760,7 +794,18 @@ static int handle_ready_connection(const Arguments *args, const struct epoll_eve
                             if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE)
                             {
                                 // Not an actual error, try again in the next cycle.
-                                return 0;
+                                if (time(NULL) - conn->receiving_start >= 1000)
+                                {
+                                    // Treat timeout as failed.
+                                    fprintf(stderr, "Receiving bench response is time-out.\n");
+                                    conn->state = CONN_ERROR;
+                                    conn->failed++;
+                                    return -1;
+                                }
+                                else
+                                {
+                                    return 0;
+                                }
                             }
                             else
                             {

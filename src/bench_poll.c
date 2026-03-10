@@ -620,6 +620,10 @@ static int handle_ready_connection(connection *conn, const Arguments *args, stru
                     // The whole request has been sent.
                     printf("%ld bytes of bench request has been sent.[%s]\n", conn->request_len, conn->request->body);
                     conn->state = conn->force_flag ? CONN_COMPLETED : CONN_RECEIVING;
+                    if (conn->state == CONN_COMPLETED)
+                    {
+                        conn->speed++;
+                    }
                 }
                 else
                 {

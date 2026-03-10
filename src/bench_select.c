@@ -37,6 +37,7 @@ typedef struct
     int force_flag;
     int bytes_sent;
     int bytes_received;
+    time_t receiving_start;
     int speed;
     int failed;
     int bytes;
@@ -487,6 +488,14 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
             {
                 printf("%d bytes of bench request has been sent.[%s]\n", conn->request_len, conn->request->body);
                 conn->state = conn->force_flag ? CONN_COMPLETED : CONN_RECEIVING;
+                if (conn->state == CONN_COMPLETED)
+                {
+                    conn->speed++;
+                }
+                else
+                {
+                    conn->receiving_start = time(NULL);
+                }
             }
             else
             {
@@ -505,6 +514,14 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                             {
                                 printf("%d bytes of bench request has been sent.[%s]\n", conn->request_len, conn->request->body);
                                 conn->state = conn->force_flag ? CONN_COMPLETED : CONN_RECEIVING;
+                                if (conn->state == CONN_COMPLETED)
+                                {
+                                    conn->speed++;
+                                }
+                                else
+                                {
+                                    conn->receiving_start = time(NULL);
+                                }
                             }
                         }
                         else
@@ -545,6 +562,14 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                         {
                             printf("%d bytes of bench request has been sent.\n", conn->request_len);
                             conn->state = conn->force_flag ? CONN_COMPLETED : CONN_RECEIVING;
+                            if (conn->state == CONN_COMPLETED)
+                            {
+                                conn->speed++;
+                            }
+                            else
+                            {
+                                conn->receiving_start = time(NULL);
+                            }
                         }
                     }
                     else if (bytes_written == -1 && ( errno == EAGAIN || errno == EWOULDBLOCK))
@@ -598,8 +623,19 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                             }
                             else
                             {
-                                // Continue to read.
-                                return 0;
+                                if (time(NULL) - conn->receiving_start >= 1000)
+                                {
+                                    // Receiving time-out is treated as failed.
+                                    fprintf(stderr, "Receiving bench response is time-out.\n");
+                                    conn->failed++;
+                                    conn->state = CONN_ERROR;
+                                    return -1;
+                                }
+                                else
+                                {
+                                    // Continue to read.
+                                    return 0;
+                                }
                             }
                         }
                         else 
@@ -650,8 +686,19 @@ static int handle_ready_connection(connection *conn, const Arguments *args, cons
                         }
                         else
                         {
-                            // Continue to read on the next select.
-                            return 0;
+                            if (time(NULL) - conn->receiving_start >= 1000)
+                            {
+                                // Receiving time-out is treated as failed.
+                                fprintf(stderr, "Receiving response is time-out.\n");
+                                conn->state = CONN_ERROR;
+                                conn->failed++;
+                                return -1;
+                            }
+                            else
+                            {
+                                // Continue to read on the next select.
+                                return 0;
+                            }
                         }
                     }
                     else if (bytes_read == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
